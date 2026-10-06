@@ -6,7 +6,9 @@ A personal Telegram client for iPhone, based on Telegram-iOS 12.9.2.
 
 The source patch adds seven settings: offline status, typing activity, cloud read receipts, local drafts, phone privacy when adding contacts, channel ads, and proxy promotions. All settings are off by default.
 
-This is an early source build. The patch applies cleanly to the pinned upstream revision. Swift compilation, IPA signing, and device testing have not been completed.
+The latest unsigned iPhone build passed on October 6, 2026. All eight Swift tests passed: five request-policy checks against the pinned Telegram API serializers and three storage checks. The full app, including the settings screen and startup changes, compiled with Xcode 26.2.
+
+[Build #5](https://github.com/damage/faithgram/actions/runs/37505486298) produced the `Faithgram-unsigned` artifact. The previous build stopped during a BrowserStack launch because its signature lacked the App Group entitlement. Startup now falls back to the private app container and creates the database directory before writing its key. A BrowserStack retest of this build is pending. Device traffic checks remain untested. The seven settings above are the current prototype; the remaining planned features are listed in `manifest.json`.
 
 ## Build
 

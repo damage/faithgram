@@ -1,6 +1,6 @@
 {
   "name": "Faithgram iOS",
-  "phase": "first_source_patch_prepared",
+  "phase": "unsigned_ipa_built_device_retest_pending",
   "device": {
     "reported_ios": "26.6.1",
     "signing_method": "not_yet_selected",
@@ -14,7 +14,7 @@
   },
   "patch": {
     "path": "patches/0001-local-policy.patch",
-    "sha256": "4148ceebc4924b363f09ba53c78f7053775c62f3b59349fc94640cffd2ab83b9",
+    "sha256": "3ca15ae9dc65c86fb888caf03c3df8cbd70c05f59120bf5b252e252167ae6cc9",
     "files": [
       "submodules/TelegramCore/Sources/PatchClient/PatchClientPolicy.swift",
       "submodules/SettingsUI/Sources/PatchClientSettingsController.swift",
@@ -25,29 +25,65 @@
       "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift",
       "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift",
       "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift",
-      "Telegram/BUILD"
+      "Telegram/BUILD",
+      "submodules/TelegramCore/Sources/PatchClient/PatchClientStorage.swift",
+      "submodules/TelegramUI/Sources/AppDelegate.swift"
     ]
   },
   "validation": {
     "patch_application": "passed_against_pinned_git_objects",
-    "swift_compilation": "not_run_no_macos",
-    "full_ios_build": "not_run_no_macos",
-    "device_testing": "not_run",
-    "ipa_created": false,
+    "swift_compilation": "passed_xcode_26_2",
+    "full_ios_build": "passed_github_actions_run_37505486298",
+    "device_testing": "browserstack_retest_pending_after_private_storage_fix",
+    "ipa_created": true,
     "python_syntax": "passed",
-    "network_entry_point_coverage": "2_foreground_and_3_worker_entry_points_patched"
+    "network_entry_point_coverage": "2_foreground_and_3_worker_entry_points_patched",
+    "policy_tests": {
+      "status": "passed",
+      "count": 5,
+      "platform": "macos_arm64",
+      "api_source": "pinned_TelegramApi_serializers"
+    },
+    "signing": "not_run",
+    "previous_build": {
+      "build_run_url": "https://github.com/damage/faithgram/actions/runs/37463608865",
+      "build_commit": "3608e6aaf33f03f8078eb76dc69baff97a1ffb22",
+      "full_ios_build": "passed_github_actions_run_37463608865",
+      "policy_tests": {
+        "status": "passed",
+        "count": 5,
+        "platform": "macos_arm64",
+        "api_source": "pinned_TelegramApi_serializers"
+      },
+      "artifact_id": 11414627410,
+      "artifact_zip_sha256": "121e84934f0a2aa39338ae48bc75ac957518f2a9a0f66d81d9fd0c7aff371bd0"
+    },
+    "build_run_url": "https://github.com/damage/faithgram/actions/runs/37505486298",
+    "build_commit": "b49f22d9fa360be3559efa9fc16dc722e46c4f72",
+    "artifact_id": 11434410079,
+    "artifact_zip_sha256": "12aecde8ed42adb5179e1f513dab98fdbd79bf32b20d1ceec7dc33f28febf71b",
+    "storage_tests": {
+      "status": "passed",
+      "count": 3,
+      "platform": "macos_arm64",
+      "coverage": [
+        "first_launch_without_app_group_persists_database_key",
+        "existing_app_group_keeps_account_data",
+        "unwritable_storage_throws_before_account_startup"
+      ]
+    }
   },
   "features": [
     {
       "section": "Accounts",
       "feature": "Always offline",
-      "status": "implemented_source_uncompiled",
+      "status": "implemented_compiled_device_untested",
       "option": "alwaysOffline"
     },
     {
       "section": "Accounts",
       "feature": "Don't share phone when adding contacts",
-      "status": "implemented_source_uncompiled",
+      "status": "implemented_compiled_device_untested",
       "option": "noPhoneException"
     },
     {
@@ -68,7 +104,7 @@
     {
       "section": "Messages",
       "feature": "Message settings",
-      "status": "partial_source_uncompiled",
+      "status": "partial_compiled_device_untested",
       "note": "Partially implemented through the Typing activity, Read receipts and Local drafts subpatches."
     },
     {
@@ -114,7 +150,7 @@
     {
       "section": "Optimizations",
       "feature": "Disable ads",
-      "status": "implemented_source_uncompiled",
+      "status": "implemented_compiled_device_untested",
       "note": "Both Telegram Ads and Proxy sponsor subpatches implemented in source."
     },
     {
@@ -154,20 +190,20 @@
     {
       "section": "Message Settings Subpatches",
       "feature": "Typing activity",
-      "status": "implemented_source_uncompiled",
+      "status": "implemented_compiled_device_untested",
       "option": "blockTyping"
     },
     {
       "section": "Message Settings Subpatches",
       "feature": "Read receipts",
-      "status": "implemented_source_uncompiled",
+      "status": "implemented_compiled_device_untested",
       "option": "blockCloudReads",
       "note": "Cloud chat RPCs only; secret chats preserve upstream behavior. Cross-device behavior untested."
     },
     {
       "section": "Message Settings Subpatches",
       "feature": "Local drafts",
-      "status": "implemented_source_uncompiled",
+      "status": "implemented_compiled_device_untested",
       "option": "localDrafts"
     },
     {
@@ -293,13 +329,13 @@
     {
       "section": "Disable Ads Subpatches",
       "feature": "Telegram Ads",
-      "status": "implemented_source_uncompiled",
+      "status": "implemented_compiled_device_untested",
       "option": "hideAds"
     },
     {
       "section": "Disable Ads Subpatches",
       "feature": "Proxy sponsor",
-      "status": "implemented_source_uncompiled",
+      "status": "implemented_compiled_device_untested",
       "option": "hideProxyPromo"
     },
     {

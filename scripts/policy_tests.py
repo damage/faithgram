@@ -18,6 +18,9 @@ if __name__ == "__main__":
         shutil.copy2(api_source, api_target / api_source.name)
     shutil.copy2(source / "submodules/TelegramCore/Sources/PatchClient/PatchClientPolicy.swift",
                  policy_target / "PatchClientPolicy.swift")
-    shutil.copy2(PROJECT / "tests/PolicyTests.swift", tests_target / "PolicyTests.swift")
+    shutil.copy2(source / "submodules/TelegramCore/Sources/PatchClient/PatchClientStorage.swift",
+                 policy_target / "PatchClientStorage.swift")
+    for test_source in (PROJECT / "tests").glob("*Tests.swift"):
+        shutil.copy2(test_source, tests_target / test_source.name)
     shutil.copy2(PROJECT / "tests/Package.swift", package / "Package.swift")
     subprocess.run(["swift", "test", "--jobs", "2"], cwd=package, check=True)
