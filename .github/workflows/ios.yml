@@ -1,0 +1,43 @@
+name: Faithgram iOS build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Validate Telegram application secrets
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+        run: |
+          python3 -c "import sys; sys.path.insert(0, 'scripts'); from build import configuration_from_environment; configuration_from_environment()"
+      - name: Select the pinned Xcode toolchain
+        run: |
+          test -d /Applications/Xcode_26.2.app
+          sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+          xcodebuild -version
+      - name: Fetch upstream and apply changes
+        run: python3 scripts/prepare.py
+      - name: Compile policy tests with the actual Telegram API
+        run: python3 scripts/policy_tests.py
+      - name: Build unsigned iPhone IPA
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+        run: python3 scripts/build.py --build-number "$GITHUB_RUN_NUMBER"
+      - name: Downloadable IPA
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Faithgram-unsigned
+          path: artifacts/Faithgram-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 3

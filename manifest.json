@@ -1,0 +1,312 @@
+{
+  "name": "Faithgram iOS",
+  "phase": "first_source_patch_prepared",
+  "device": {
+    "reported_ios": "26.6.1",
+    "signing_method": "not_yet_selected",
+    "device_tested": false
+  },
+  "upstream": {
+    "url": "https://github.com/TelegramMessenger/Telegram-iOS.git",
+    "commit": "6ad963e5b62d354da79040f388ae2b9132fb17b8",
+    "app_version": "12.9.2",
+    "xcode": "26.2"
+  },
+  "patch": {
+    "path": "patches/0001-local-policy.patch",
+    "sha256": "4148ceebc4924b363f09ba53c78f7053775c62f3b59349fc94640cffd2ab83b9",
+    "files": [
+      "submodules/TelegramCore/Sources/PatchClient/PatchClientPolicy.swift",
+      "submodules/SettingsUI/Sources/PatchClientSettingsController.swift",
+      "submodules/TelegramCore/Sources/Network/Network.swift",
+      "submodules/TelegramCore/Sources/Network/Download.swift",
+      "submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift",
+      "submodules/TelegramCore/Sources/State/RestoreFetchedDrafts.swift",
+      "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift",
+      "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift",
+      "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift",
+      "Telegram/BUILD"
+    ]
+  },
+  "validation": {
+    "patch_application": "passed_against_pinned_git_objects",
+    "swift_compilation": "not_run_no_macos",
+    "full_ios_build": "not_run_no_macos",
+    "device_testing": "not_run",
+    "ipa_created": false,
+    "python_syntax": "passed",
+    "network_entry_point_coverage": "2_foreground_and_3_worker_entry_points_patched"
+  },
+  "features": [
+    {
+      "section": "Accounts",
+      "feature": "Always offline",
+      "status": "implemented_source_uncompiled",
+      "option": "alwaysOffline"
+    },
+    {
+      "section": "Accounts",
+      "feature": "Don't share phone when adding contacts",
+      "status": "implemented_source_uncompiled",
+      "option": "noPhoneException"
+    },
+    {
+      "section": "Accounts",
+      "feature": "999 accounts",
+      "status": "pending_port"
+    },
+    {
+      "section": "Accounts",
+      "feature": "Hide self phone",
+      "status": "pending_port"
+    },
+    {
+      "section": "Accounts",
+      "feature": "Custom account settings",
+      "status": "pending_port"
+    },
+    {
+      "section": "Messages",
+      "feature": "Message settings",
+      "status": "partial_source_uncompiled",
+      "note": "Partially implemented through the Typing activity, Read receipts and Local drafts subpatches."
+    },
+    {
+      "section": "Messages",
+      "feature": "Show bot callback-data on hover",
+      "status": "pending_port"
+    },
+    {
+      "section": "Messages",
+      "feature": "Sensitive blur",
+      "status": "pending_port"
+    },
+    {
+      "section": "Messages",
+      "feature": "More recent stickers",
+      "status": "pending_port"
+    },
+    {
+      "section": "Messages",
+      "feature": "Open links without warning",
+      "status": "pending_port"
+    },
+    {
+      "section": "Messages",
+      "feature": "Disable media spoilers",
+      "status": "pending_port"
+    },
+    {
+      "section": "Optimizations",
+      "feature": "Disable Premium, Stars, TON & Gifts",
+      "status": "pending_port"
+    },
+    {
+      "section": "Optimizations",
+      "feature": "Disable premium effects",
+      "status": "pending_port"
+    },
+    {
+      "section": "Optimizations",
+      "feature": "Hide stories",
+      "status": "pending_port"
+    },
+    {
+      "section": "Optimizations",
+      "feature": "Disable ads",
+      "status": "implemented_source_uncompiled",
+      "note": "Both Telegram Ads and Proxy sponsor subpatches implemented in source."
+    },
+    {
+      "section": "Gifts",
+      "feature": "Spoof profile gifts",
+      "status": "pending_port",
+      "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
+    },
+    {
+      "section": "Gifts",
+      "feature": "Spoof profile unique gifts",
+      "status": "pending_port",
+      "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
+    },
+    {
+      "section": "Gifts",
+      "feature": "Fake transfer",
+      "status": "pending_port",
+      "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
+    },
+    {
+      "section": "Gifts",
+      "feature": "Show hidden gifts",
+      "status": "pending_port"
+    },
+    {
+      "section": "Misc",
+      "feature": "DLL injection",
+      "status": "replaced_by_source_build"
+    },
+    {
+      "section": "Misc",
+      "feature": "MTProto request/response logger",
+      "status": "pending_port",
+      "note": "Decoded logs contain sensitive data; full logger is pending and will be off by default."
+    },
+    {
+      "section": "Message Settings Subpatches",
+      "feature": "Typing activity",
+      "status": "implemented_source_uncompiled",
+      "option": "blockTyping"
+    },
+    {
+      "section": "Message Settings Subpatches",
+      "feature": "Read receipts",
+      "status": "implemented_source_uncompiled",
+      "option": "blockCloudReads",
+      "note": "Cloud chat RPCs only; secret chats preserve upstream behavior. Cross-device behavior untested."
+    },
+    {
+      "section": "Message Settings Subpatches",
+      "feature": "Local drafts",
+      "status": "implemented_source_uncompiled",
+      "option": "localDrafts"
+    },
+    {
+      "section": "Message Settings Subpatches",
+      "feature": "Custom Fact Check",
+      "status": "pending_port"
+    },
+    {
+      "section": "Message Settings Subpatches",
+      "feature": "Copy/save protect content",
+      "status": "pending_port"
+    },
+    {
+      "section": "Message Settings Subpatches",
+      "feature": "Disable TTL",
+      "status": "pending_port"
+    },
+    {
+      "section": "Disable Premium, Stars, TON & Gifts Subpatches",
+      "feature": "App config",
+      "status": "pending_port"
+    },
+    {
+      "section": "Disable Premium, Stars, TON & Gifts Subpatches",
+      "feature": "Premium UI",
+      "status": "pending_port"
+    },
+    {
+      "section": "Disable Premium, Stars, TON & Gifts Subpatches",
+      "feature": "Gifts",
+      "status": "pending_port"
+    },
+    {
+      "section": "Disable Premium, Stars, TON & Gifts Subpatches",
+      "feature": "Paid reactions",
+      "status": "pending_port"
+    },
+    {
+      "section": "Disable Premium, Stars, TON & Gifts Subpatches",
+      "feature": "Emoji statuses and effects",
+      "status": "pending_port"
+    },
+    {
+      "section": "Disable Premium, Stars, TON & Gifts Subpatches",
+      "feature": "Stars, TON and collectibles",
+      "status": "pending_port"
+    },
+    {
+      "section": "Disable Premium, Stars, TON & Gifts Subpatches",
+      "feature": "Boosts",
+      "status": "pending_port"
+    },
+    {
+      "section": "Disable Premium, Stars, TON & Gifts Subpatches",
+      "feature": "Read receipts fix",
+      "status": "pending_port"
+    },
+    {
+      "section": "Custom Account Settings Subpatches",
+      "feature": "Custom Stars",
+      "status": "pending_port",
+      "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
+    },
+    {
+      "section": "Custom Account Settings Subpatches",
+      "feature": "Custom TON",
+      "status": "pending_port",
+      "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
+    },
+    {
+      "section": "Custom Account Settings Subpatches",
+      "feature": "Custom level rating",
+      "status": "pending_port"
+    },
+    {
+      "section": "Custom Account Settings Subpatches",
+      "feature": "Visual peer badge",
+      "status": "pending_port"
+    },
+    {
+      "section": "Custom Account Settings Subpatches",
+      "feature": "Bot verification",
+      "status": "pending_port"
+    },
+    {
+      "section": "Custom Account Settings Subpatches",
+      "feature": "Local Telegram Premium",
+      "status": "pending_port",
+      "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
+    },
+    {
+      "section": "Custom Account Settings Subpatches",
+      "feature": "Account freeze",
+      "status": "pending_port"
+    },
+    {
+      "section": "Custom Account Settings Subpatches",
+      "feature": "Custom phone number",
+      "status": "pending_port",
+      "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
+    },
+    {
+      "section": "Custom Account Settings Subpatches",
+      "feature": "Custom userID",
+      "status": "pending_port",
+      "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
+    },
+    {
+      "section": "Custom Account Settings Subpatches",
+      "feature": "Local attached channel",
+      "status": "pending_port"
+    },
+    {
+      "section": "Custom Account Settings Subpatches",
+      "feature": "Fragment phone",
+      "status": "pending_port"
+    },
+    {
+      "section": "Custom Account Settings Subpatches",
+      "feature": "Custom list usernames",
+      "status": "pending_port"
+    },
+    {
+      "section": "Disable Ads Subpatches",
+      "feature": "Telegram Ads",
+      "status": "implemented_source_uncompiled",
+      "option": "hideAds"
+    },
+    {
+      "section": "Disable Ads Subpatches",
+      "feature": "Proxy sponsor",
+      "status": "implemented_source_uncompiled",
+      "option": "hideProxyPromo"
+    },
+    {
+      "section": "Additional features",
+      "feature": "Hide blocked users' messages",
+      "status": "pending_port",
+      "note": "Pending implementation."
+    }
+  ]
+}

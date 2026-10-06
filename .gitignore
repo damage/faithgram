@@ -1,0 +1,9 @@
+work/
+artifacts/
+__pycache__/
+*.pyc
+*.ipa
+*.mobileprovision
+*.p12
+*.cer
+.env
