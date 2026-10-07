@@ -2,7 +2,8 @@
 import PackageDescription
 
 let package = Package(
-    name: "PatchClientPolicyChecks",
+    name: "FaithgramChecks",
+    platforms: [.macOS(.v13), .iOS(.v13)],
     products: [.library(name: "PatchClientCore", targets: ["PatchClientCore"])],
     targets: [
         .target(name: "TelegramApi"),

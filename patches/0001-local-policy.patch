@@ -1,8 +1,62 @@
 diff --git a/Telegram/BUILD b/Telegram/BUILD
-index 9ad13cf..2d9101e 100644
+index 9ad13cf..9c2f028 100644
 --- a/Telegram/BUILD
 +++ b/Telegram/BUILD
-@@ -1568,11 +1568,11 @@ plist_fragment(
+@@ -309,6 +309,11 @@ filegroup(
+     ], exclude = ["Telegram-iOS/DefaultAppIcon.xcassets/**/.*"]),
+ )
+ 
++filegroup(
++    name = "FaithgramAppIcon",
++    srcs = glob(["Telegram-iOS/FaithgramAppIcon.xcassets/**/*"]),
++)
++
+ filegroup(
+     name = "DefaultIcon",
+     srcs = glob([
+@@ -1151,6 +1156,41 @@ ios_extension(
+     ],
+ )
+ 
++plist_fragment(
++    name = "FaithgramActivityInfoPlist",
++    extension = "plist",
++    template = """
++    <key>CFBundleDevelopmentRegion</key><string>en</string>
++    <key>CFBundleName</key><string>faithgram</string>
++    <key>CFBundlePackageType</key><string>XPC!</string>
++    <key>NSExtension</key><dict>
++        <key>NSExtensionPointIdentifier</key><string>com.apple.widgetkit-extension</string>
++    </dict>
++    """,
++)
++
++swift_library(
++    name = "FaithgramActivityWidgetLib",
++    module_name = "FaithgramActivityWidgetLib",
++    srcs = glob(["FaithgramActivityWidget/**/*.swift"]),
++    copts = ["-warnings-as-errors"],
++    deps = ["//submodules/FaithgramActivity"],
++)
++
++ios_extension(
++    name = "FaithgramActivityExtension",
++    bundle_id = telegram_bundle_id + ".FaithgramActivity",
++    families = ["iphone", "ipad"],
++    infoplists = [":FaithgramActivityInfoPlist", ":VersionInfoPlist", ":BuildNumberInfoPlist"],
++    minimum_os_version = "16.2",
++    provisioning_profile = select({
++        ":disableProvisioningProfilesSetting": None,
++        "//conditions:default": "@build_configuration//provisioning:Widget.mobileprovision",
++    }),
++    deps = [":FaithgramActivityWidgetLib"],
++    resources = ["Resources/FaithgramIcon.png"],
++)
++
+ plist_fragment(
+     name = "WidgetInfoPlist",
+     extension = "plist",
+@@ -1568,11 +1608,11 @@ plist_fragment(
      <key>CFBundleDevelopmentRegion</key>
      <string>en</string>
      <key>CFBundleDisplayName</key>
@@ -16,88 +70,1032 @@ index 9ad13cf..2d9101e 100644
      <key>CFBundlePackageType</key>
      <string>APPL</string>
      <key>CFBundleSignature</key>
-diff --git a/submodules/SettingsUI/Sources/PatchClientSettingsController.swift b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
+@@ -1647,6 +1687,8 @@ plist_fragment(
+     <string>We need this so that you can share photos and videos from your photo library.</string>
+     <key>NSSiriUsageDescription</key>
+     <string>You can use Siri to send messages.</string>
++    <key>NSSupportsLiveActivities</key>
++    <true/>
+     <key>NSSpeechRecognitionUsageDescription</key>
+     <string>We need this to transcribe audio messages on your request.</string>
+     <key>NSUserActivityTypes</key>
+@@ -1777,12 +1819,13 @@ ios_application(
+         ":RequiredDeviceCapabilitiesPlist",
+         ":UrlTypesInfoPlist",
+     ],
+-    app_icons = [ ":{}_icon".format(name) for name in composer_icon_folders ],
++    app_icons = [":FaithgramAppIcon"],
+     alternate_icons = [
+         ":{}".format(name) for name in alternate_icon_folders
+     ],
+     resources = [
+         ":LaunchScreen",
++        "Resources/FaithgramIcon.png",
+         #":DefaultAppIcon",
+     ],
+     frameworks = [
+@@ -1796,13 +1839,14 @@ ios_application(
+         ":AppStringResources",
+     ],
+     extensions = select({
+-        ":disableExtensionsSetting": [],
++        ":disableExtensionsSetting": [":FaithgramActivityExtension"],
+         "//conditions:default": [
+             ":ShareExtension",
+             ":NotificationContentExtension",
+             ":NotificationServiceExtension" + notificationServiceExtensionVersion,
+             ":IntentsExtension",
+             ":WidgetExtension",
++            ":FaithgramActivityExtension",
+             ":BroadcastUploadExtension",
+         ],
+     }),
+diff --git a/Telegram/FaithgramActivityWidget/FaithgramActivityWidget.swift b/Telegram/FaithgramActivityWidget/FaithgramActivityWidget.swift
 new file mode 100644
-index 0000000..1c9fd3f
+index 0000000..85a82bb
 --- /dev/null
-+++ b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
-@@ -0,0 +1,76 @@
++++ b/Telegram/FaithgramActivityWidget/FaithgramActivityWidget.swift
+@@ -0,0 +1,37 @@
++import ActivityKit
++import WidgetKit
++import SwiftUI
++import FaithgramActivity
++
++@main
++struct FaithgramActivityWidgets: WidgetBundle {
++    var body: some Widget { FaithgramStatusWidget() }
++}
++
++struct FaithgramStatusWidget: Widget {
++    private func icon(_ size: CGFloat) -> some View {
++        Image("FaithgramIcon").resizable().scaledToFit().frame(width: size, height: size).accessibilityLabel("faithgram")
++    }
++    var body: some WidgetConfiguration {
++        ActivityConfiguration(for: FaithgramActivityAttributes.self) { context in
++            HStack(spacing: 14) {
++                icon(42)
++                VStack(alignment: .leading, spacing: 4) {
++                    Text("faithgram").font(.headline)
++                    Text(context.state.active ? "active" : "ready").font(.caption).foregroundColor(.gray)
++                }
++                Spacer()
++            }.padding(20).activityBackgroundTint(.black).activitySystemActionForegroundColor(.white).foregroundColor(.white)
++        } dynamicIsland: { context in
++            DynamicIsland {
++                DynamicIslandExpandedRegion(.leading) { icon(32) }
++                DynamicIslandExpandedRegion(.center) { Text("faithgram").font(.headline) }
++                DynamicIslandExpandedRegion(.trailing) { Circle().fill(context.state.active ? Color.white : Color.gray).frame(width: 8, height: 8) }
++                DynamicIslandExpandedRegion(.bottom) { Text(context.state.active ? "active" : "ready").font(.caption).foregroundColor(.gray) }
++            } compactLeading: { icon(20) }
++              compactTrailing: { Circle().fill(context.state.active ? Color.white : Color.gray).frame(width: 5, height: 5) }
++              minimal: { icon(20) }
++            .keylineTint(.white)
++        }
++    }
++}
+diff --git a/Telegram/Telegram-iOS/FaithgramAppIcon.xcassets/AppIcon.appiconset/Contents.json b/Telegram/Telegram-iOS/FaithgramAppIcon.xcassets/AppIcon.appiconset/Contents.json
+new file mode 100644
+index 0000000..afa765a
+--- /dev/null
++++ b/Telegram/Telegram-iOS/FaithgramAppIcon.xcassets/AppIcon.appiconset/Contents.json
+@@ -0,0 +1,11 @@
++{
++  "images": [
++    {
++      "filename": "icon.png",
++      "idiom": "universal",
++      "platform": "ios",
++      "size": "1024x1024"
++    }
++  ],
++  "info": { "author": "xcode", "version": 1 }
++}
+diff --git a/Telegram/Telegram-iOS/FaithgramAppIcon.xcassets/Contents.json b/Telegram/Telegram-iOS/FaithgramAppIcon.xcassets/Contents.json
+new file mode 100644
+index 0000000..319a86b
+--- /dev/null
++++ b/Telegram/Telegram-iOS/FaithgramAppIcon.xcassets/Contents.json
+@@ -0,0 +1,3 @@
++{
++  "info": { "author": "xcode", "version": 1 }
++}
+diff --git a/build-system/GenerateStrings/GenerateStrings.py b/build-system/GenerateStrings/GenerateStrings.py
+index e10ff2b..a296aae 100644
+--- a/build-system/GenerateStrings/GenerateStrings.py
++++ b/build-system/GenerateStrings/GenerateStrings.py
+@@ -445,6 +445,26 @@ static NSString * _Nonnull getPluralizationSuffix(uint32_t lc, int32_t value) {
+     }
+ }
+ 
++static NSString * _Nonnull faithgramInterfaceTemplate(NSString * _Nonnull value) {
++    if (![[NSUserDefaults standardUserDefaults] boolForKey:@"patchclient.option.lowercaseInterface"]) {
++        return value;
++    }
++    static NSRegularExpression *protectedTokens;
++    static dispatch_once_t token;
++    dispatch_once(&token, ^{
++        protectedTokens = [NSRegularExpression regularExpressionWithPattern:@"https?://[^[:space:]]+|tg://[^[:space:]]+|%[0-9$]*[@d]" options:NSRegularExpressionCaseInsensitive error:nil];
++    });
++    NSMutableString *result = [[NSMutableString alloc] init];
++    NSUInteger offset = 0;
++    for (NSTextCheckingResult *match in [protectedTokens matchesInString:value options:0 range:NSMakeRange(0, value.length)]) {
++        [result appendString:[[value substringWithRange:NSMakeRange(offset, match.range.location - offset)] lowercaseString]];
++        [result appendString:[value substringWithRange:match.range]];
++        offset = NSMaxRange(match.range);
++    }
++    [result appendString:[[value substringFromIndex:offset] lowercaseString]];
++    return result;
++}
++
+ static NSString * _Nonnull getSingle(_PresentationStrings * _Nullable strings, NSString * _Nonnull key,
+     bool * _Nullable isFound) {
+     NSString *result = nil;
+@@ -484,7 +504,7 @@ static NSString * _Nonnull getSingle(_PresentationStrings * _Nullable strings, N
+             *isFound = true;
+         }
+     }
+-    return result;
++    return faithgramInterfaceTemplate(result);
+ }
+ 
+ static NSString * _Nonnull getSingleIndirect(_PresentationStrings * _Nonnull strings, uint32_t keyId) {
+diff --git a/submodules/ChatListUI/Sources/ChatListController.swift b/submodules/ChatListUI/Sources/ChatListController.swift
+index eafe957..c6d327a 100644
+--- a/submodules/ChatListUI/Sources/ChatListController.swift
++++ b/submodules/ChatListUI/Sources/ChatListController.swift
+@@ -745,6 +745,11 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
+                     return
+                 }
+                 
++                if PatchClientPolicy.isEnabled(.rememberFolder), fraction == 0.0 {
++                    let id: Int32
++                    switch filter { case .all: id = 0; case let .filter(value): id = value }
++                    FaithgramPreferences.setText("lastFolder.\(strongSelf.context.account.peerId.toInt64())", String(id))
++                }
+                 if let navigationBarView = strongSelf.chatListDisplayNode.navigationBarView.view as? ChatListNavigationBar.View, let headerPanelsView = navigationBarView.headerPanels as? HeaderPanelContainerComponent.View, let tabsView = headerPanelsView.tabs as? HorizontalTabsComponent.View {
+                     tabsView.updateTabSwitchFraction(fraction: fraction, isDragging: strongSelf.chatListDisplayNode.mainContainerNode.isSwitchingCurrentItemFilterByDragging, transition: ComponentTransition(transition))
+                 }
+@@ -4022,6 +4027,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
+                 }
+             }
+             
++            if PatchClientPolicy.isEnabled(.hideAllChats), filterItems.count > 1 { filterItems.removeAll { $0.id == .all } }
+             var resolvedItems = filterItems
+             if case .chatList(.root) = strongSelf.location {
+             } else {
+@@ -4029,7 +4035,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
+             }
+             
+             let firstItem = countAndFilterItems.1.first?.0 ?? .allChats
+-            let firstItemEntryId: ChatListFilterTabEntryId
++            var firstItemEntryId: ChatListFilterTabEntryId
+             switch firstItem {
+                 case .allChats:
+                     firstItemEntryId = .all
+@@ -4037,6 +4043,11 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
+                     firstItemEntryId = .filter(id)
+             }
+             
++            firstItemEntryId = resolvedItems.first?.id ?? firstItemEntryId
++            if !strongSelf.initializedFilters, PatchClientPolicy.isEnabled(.rememberFolder), let saved = Int32(FaithgramPreferences.text("lastFolder.\(strongSelf.context.account.peerId.toInt64())")) {
++                let id: ChatListFilterTabEntryId = saved == 0 ? .all : .filter(saved)
++                if resolvedItems.contains(where: { $0.id == id }) { firstItemEntryId = id }
++            }
+             var selectedEntryId = !strongSelf.initializedFilters ? firstItemEntryId : strongSelf.chatListDisplayNode.mainContainerNode.currentItemFilter
+             var resetCurrentEntry = false
+             if !resolvedItems.contains(where: { $0.id == selectedEntryId }) {
+@@ -4044,7 +4055,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
+                 if let tabContainerData = strongSelf.tabContainerData {
+                     var found = false
+                     if let index = tabContainerData.0.firstIndex(where: { $0.id == selectedEntryId }) {
+-                        for i in (0 ..< index - 1).reversed() {
++                        for i in (0 ..< index).reversed() {
+                             if resolvedItems.contains(where: { $0.id == tabContainerData.0[i].id }) {
+                                 selectedEntryId = tabContainerData.0[i].id
+                                 found = true
+@@ -4053,10 +4064,10 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
+                         }
+                     }
+                     if !found {
+-                        selectedEntryId = .all
++                        selectedEntryId = resolvedItems.first?.id ?? .all
+                     }
+                 } else {
+-                    selectedEntryId = .all
++                    selectedEntryId = resolvedItems.first?.id ?? .all
+                 }
+             }
+             let filtersLimit = isPremium == false ? limits.maxFoldersCount : nil
+@@ -4079,6 +4090,9 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
+             if !hasAllChats {
+                 availableFilters.insert(.all, at: 0)
+             }
++            if PatchClientPolicy.isEnabled(.hideAllChats), availableFilters.count > 1 {
++                availableFilters.removeAll { value in if case .all = value { return true }; return false }
++            }
+             strongSelf.chatListDisplayNode.mainContainerNode.updateAvailableFilters(availableFilters, limit: filtersLimit)
+             
+             if isPremium == nil && items.isEmpty {
+@@ -4155,6 +4169,9 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
+                     updatedFilter = nil
+                 }
+             }
++            if PatchClientPolicy.isEnabled(.rememberFolder) {
++                FaithgramPreferences.setText("lastFolder.\(strongSelf.context.account.peerId.toInt64())", String(updatedFilter?.id ?? 0))
++            }
+             if strongSelf.chatListDisplayNode.mainContainerNode.currentItemNode.chatListFilter?.id == updatedFilter?.id {
+                 strongSelf.scrollToTop?()
+             } else {
+@@ -6605,6 +6622,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
+         return self.storyCameraTransitionInCoordinator != nil
+     }
+     func storyCameraPanGestureChanged(transitionFraction: CGFloat) {
++        if PatchClientPolicy.isEnabled(.disableStoryCamera) { return }
+         guard let rootController = self.context.sharedContext.mainWindow?.viewController as? TelegramRootControllerInterface else {
+             return
+         }
+diff --git a/submodules/ChatListUI/Sources/ChatListControllerNode.swift b/submodules/ChatListUI/Sources/ChatListControllerNode.swift
+index 00220fd..f84ad96 100644
+--- a/submodules/ChatListUI/Sources/ChatListControllerNode.swift
++++ b/submodules/ChatListUI/Sources/ChatListControllerNode.swift
+@@ -649,7 +649,7 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
+                     hasLiveStream = true
+                 }
+                      
+-                if case .compact = layout.metrics.widthClass, self.controller?.isStoryPostingAvailable == true && !(self.context.sharedContext.callManager?.hasActiveCall ?? false) {
++                if !PatchClientPolicy.isEnabled(.disableStoryCamera), case .compact = layout.metrics.widthClass, self.controller?.isStoryPostingAvailable == true && !(self.context.sharedContext.callManager?.hasActiveCall ?? false) {
+                     if hasLiveStream {
+                         if translation.x >= 30.0 {
+                             self.panRecognizer?.cancel()
+@@ -1653,6 +1653,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
+             navigationHeaderPanels = AnyComponent(HeaderPanelContainerComponent(
+                 theme: self.presentationData.theme,
+                 tabs: tabs,
++                tabsAtBottom: PatchClientPolicy.isEnabled(.foldersAtBottom) && !isEditing && self.isSearchDisplayControllerActive == nil,
+                 panels: panels
+             ))
+         }
+@@ -1733,6 +1734,9 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
+                 self.view.addSubview(navigationBarComponentView)
+             }
+             transition.setFrame(view: navigationBarComponentView, frame: CGRect(origin: CGPoint(), size: navigationBarSize))
++            if let panels = navigationBarComponentView.headerPanels as? HeaderPanelContainerComponent.View {
++                panels.layoutBottomTabs(in: self.view, size: layout.size, bottomInset: layout.insets(options: [.input]).bottom, transition: transition.containedViewLayoutTransition)
++            }
+             
+             return (navigationBarSize.height, 0.0)
+         } else {
+@@ -1848,6 +1852,9 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
+         insets.top += navigationBarHeight
+         insets.left += layout.safeInsets.left
+         insets.right += layout.safeInsets.right
++        if let navigation = self.navigationBarView.view as? ChatListNavigationBar.View, let panels = navigation.headerPanels as? HeaderPanelContainerComponent.View {
++            insets.bottom += panels.bottomTabsHeight
++        }
+         
+         if let toolbarData = self.toolbarData {
+             var panelsBottomInset: CGFloat = layout.insets(options: []).bottom
+@@ -2459,6 +2466,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
+ }
+ 
+ func shouldDisplayStoriesInChatListHeader(storySubscriptions: EngineStorySubscriptions, isHidden: Bool) -> Bool {
++    if PatchClientPolicy.isEnabled(.hideStories) { return false }
+     if !storySubscriptions.items.isEmpty {
+         return true
+     }
+diff --git a/submodules/ChatListUI/Sources/Node/ChatListItemStrings.swift b/submodules/ChatListUI/Sources/Node/ChatListItemStrings.swift
+index a87986b..c7cc3e4 100644
+--- a/submodules/ChatListUI/Sources/Node/ChatListItemStrings.swift
++++ b/submodules/ChatListUI/Sources/Node/ChatListItemStrings.swift
+@@ -81,6 +81,10 @@ public func chatListItemStrings(strings: PresentationStrings, nameDisplayOrder:
+     let peer: EnginePeer?
+     
+     let message = messages.last
++
++    if let message, FaithgramMessageFilter.matches(message.text) {
++        return (chatPeer.chatMainPeer, true, FaithgramPreferences.interfaceText("Filtered message"), [], nil, nil, nil)
++    }
+     
+     if let restrictionReason = message?._asMessage().restrictionReason(platform: "ios", contentSettings: contentSettings) {
+         return (nil, false, restrictionReason, [], nil, nil, nil)
+diff --git a/submodules/FaithgramActivity/BUILD b/submodules/FaithgramActivity/BUILD
+new file mode 100644
+index 0000000..c9af717
+--- /dev/null
++++ b/submodules/FaithgramActivity/BUILD
+@@ -0,0 +1,9 @@
++load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
++
++swift_library(
++    name = "FaithgramActivity",
++    module_name = "FaithgramActivity",
++    srcs = glob(["Sources/**/*.swift"]),
++    copts = ["-warnings-as-errors"],
++    visibility = ["//visibility:public"],
++)
+diff --git a/submodules/FaithgramActivity/Sources/FaithgramActivityAttributes.swift b/submodules/FaithgramActivity/Sources/FaithgramActivityAttributes.swift
+new file mode 100644
+index 0000000..05d1520
+--- /dev/null
++++ b/submodules/FaithgramActivity/Sources/FaithgramActivityAttributes.swift
+@@ -0,0 +1,11 @@
 +import Foundation
++import ActivityKit
++
++@available(iOS 16.2, *)
++public struct FaithgramActivityAttributes: ActivityAttributes {
++    public struct ContentState: Codable, Hashable {
++        public let active: Bool
++        public init(active: Bool) { self.active = active }
++    }
++    public init() { }
++}
+diff --git a/submodules/Media/LocalAudioTranscription/Sources/LocalAudioTranscription.swift b/submodules/Media/LocalAudioTranscription/Sources/LocalAudioTranscription.swift
+index 243b622..031e894 100644
+--- a/submodules/Media/LocalAudioTranscription/Sources/LocalAudioTranscription.swift
++++ b/submodules/Media/LocalAudioTranscription/Sources/LocalAudioTranscription.swift
+@@ -42,22 +42,31 @@ private func transcribeAudio(path: String, locale: String) -> Signal<Transcripti
+                             sharedRecognizers[locale] = speechRecognizerValue
+                             speechRecognizer = speechRecognizerValue
+                             
+-                            if locale == "en-US" {
+-                                speechRecognizer.supportsOnDeviceRecognition = true
+-                            } else {
+-                                speechRecognizer.supportsOnDeviceRecognition = false
+-                            }
+-                            speechRecognizer.supportsOnDeviceRecognition = true
++
+                         }
+                         
++                        guard speechRecognizer.isAvailable, speechRecognizer.supportsOnDeviceRecognition else {
++                            subscriber.putNext(nil)
++                            subscriber.putCompletion()
++                            return
++                        }
++
+                         let tempFilePath = NSTemporaryDirectory() + "/\(UInt64.random(in: 0 ... UInt64.max)).m4a"
+-                        let _ = try? FileManager.default.copyItem(atPath: path, toPath: tempFilePath)
++                        do {
++                            try FileManager.default.copyItem(atPath: path, toPath: tempFilePath)
++                            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: tempFilePath)
++                        } catch {
++                            try? FileManager.default.removeItem(atPath: tempFilePath)
++                            subscriber.putNext(nil)
++                            subscriber.putCompletion()
++                            return
++                        }
+                         
+                         let request = SFSpeechURLRecognitionRequest(url: URL(fileURLWithPath: tempFilePath))
+                         if #available(iOS 16.0, *) {
+                             request.addsPunctuation = true
+                         }
+-                        request.requiresOnDeviceRecognition = speechRecognizer.supportsOnDeviceRecognition
++                        request.requiresOnDeviceRecognition = true
+                         request.shouldReportPartialResults = false
+                         
+                         let task = speechRecognizer.recognitionTask(with: request, resultHandler: { result, error in
+@@ -66,14 +75,13 @@ private func transcribeAudio(path: String, locale: String) -> Signal<Transcripti
+                                 for segment in result.bestTranscription.segments {
+                                     confidence += segment.confidence
+                                 }
+-                                confidence /= Float(result.bestTranscription.segments.count)
++                                confidence /= Float(max(1, result.bestTranscription.segments.count))
+                                 subscriber.putNext(TranscriptionResult(text: result.bestTranscription.formattedString, confidence: confidence, isFinal: result.isFinal))
+                                 
+                                 if result.isFinal {
+                                     subscriber.putCompletion()
+                                 }
+                             } else {
+-                                print("transcribeAudio: locale: \(locale), error: \(String(describing: error))")
+                                 
+                                 subscriber.putNext(nil)
+                                 subscriber.putCompletion()
+@@ -82,6 +90,7 @@ private func transcribeAudio(path: String, locale: String) -> Signal<Transcripti
+                         
+                         disposable.set(ActionDisposable {
+                             task.cancel()
++                            try? FileManager.default.removeItem(atPath: tempFilePath)
+                         })
+                     @unknown default:
+                         subscriber.putNext(nil)
+@@ -106,7 +115,7 @@ public struct LocallyTranscribedAudio {
+ 
+ public func transcribeAudio(path: String, appLocale: String) -> Signal<LocallyTranscribedAudio?, NoError> {
+     var signals: [Signal<TranscriptionResult?, NoError>] = []
+-    var locales: [String] = []
++    var locales: [String] = [appLocale.replacingOccurrences(of: "_", with: "-")]
+     if !locales.contains(Locale.current.identifier) {
+         locales.append(Locale.current.identifier)
+     }
+diff --git a/submodules/SettingsUI/BUILD b/submodules/SettingsUI/BUILD
+index b8a0540..312b7d2 100644
+--- a/submodules/SettingsUI/BUILD
++++ b/submodules/SettingsUI/BUILD
+@@ -15,6 +15,7 @@ swift_library(
+         "//submodules/Display:Display",
+         "//submodules/Postbox:Postbox",
+         "//submodules/TelegramCore:TelegramCore",
++        "//submodules/TelegramApi:TelegramApi",
+         "//submodules/MtProtoKit:MtProtoKit",
+         "//submodules/TelegramPresentationData:TelegramPresentationData",
+         "//submodules/AccountContext:AccountContext",
+diff --git a/submodules/SettingsUI/Sources/FaithgramHistoryController.swift b/submodules/SettingsUI/Sources/FaithgramHistoryController.swift
+new file mode 100644
+index 0000000..4c39a6f
+--- /dev/null
++++ b/submodules/SettingsUI/Sources/FaithgramHistoryController.swift
+@@ -0,0 +1,142 @@
++import Foundation
++import UIKit
++import AsyncDisplayKit
 +import Display
-+import SwiftSignalKit
 +import TelegramCore
-+import TelegramPresentationData
-+import ItemListUI
 +import AccountContext
 +
-+private final class PatchClientSettingsArguments {
-+    let update: (PatchClientOption, Bool) -> Void
-+
-+    init(update: @escaping (PatchClientOption, Bool) -> Void) {
-+        self.update = update
++final class FaithgramHistoryController: ViewController, UITableViewDataSource, UITableViewDelegate {
++    private let context: AccountContext
++    private let table = UITableView(frame: .zero, style: .insetGrouped)
++    private var records: [FaithgramHistoryRecord] = []
++    private let message: (peer: Int64, namespace: Int32, id: Int32)?
++    init(context: AccountContext, message: (peer: Int64, namespace: Int32, id: Int32)? = nil) {
++        self.context = context
++        self.message = message
++        super.init(navigationBarPresentationData: NavigationBarPresentationData(presentationData: context.sharedContext.currentPresentationData.with { $0 }, style: .glass))
++        self.title = FaithgramPreferences.interfaceText("Message history")
++        self.statusBar.statusBarStyle = .White
++    }
++    required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
++    override func loadDisplayNode() {
++        self.displayNode = ASDisplayNode()
++        self.displayNode.backgroundColor = .black
++        self.displayNodeDidLoad()
++        table.backgroundColor = .black
++        table.dataSource = self
++        table.delegate = self
++        table.rowHeight = UITableView.automaticDimension
++        table.estimatedRowHeight = 84
++        table.contentInsetAdjustmentBehavior = .never
++        view.addSubview(table)
++        let context = self.context
++        let message = self.message
++        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
++            do {
++                let store = try FaithgramMessageHistory.store(mediaBox: context.account.postbox.mediaBox, accountPeerId: context.account.peerId)
++                let records: [FaithgramHistoryRecord]
++                if let message { records = try store.record(peerId: message.peer, namespace: message.namespace, messageId: message.id).map { [$0] } ?? [] }
++                else { records = try store.records() }
++                DispatchQueue.main.async {
++                    guard let self else { return }
++                    self.records = records
++                    self.table.reloadData()
++                    if records.isEmpty { self.showMessage("No archived messages yet. History starts when saving is enabled and this device receives an edit or deletion.") }
++                }
++            } catch { DispatchQueue.main.async { self?.showMessage("Message history could not be opened. Check device access and available storage.") } }
++        }
++    }
++    private func showMessage(_ text: String) {
++        let label = UILabel()
++        label.text = FaithgramPreferences.interfaceText(text)
++        label.textColor = .gray
++        label.numberOfLines = 0
++        label.textAlignment = .center
++        table.backgroundView = label
++    }
++    override func containerLayoutUpdated(_ layout: ContainerViewLayout, transition: ContainedViewLayoutTransition) {
++        super.containerLayoutUpdated(layout, transition: transition)
++        let top = navigationLayout(layout: layout).navigationFrame.maxY
++        transition.updateFrame(view: table, frame: CGRect(x: 0, y: top, width: layout.size.width, height: layout.size.height - top))
++        table.contentInset.bottom = layout.intrinsicInsets.bottom + 16
++    }
++    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { return records.count }
++    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
++        let record = records[indexPath.row]
++        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
++        cell.backgroundColor = UIColor(white: 0.105, alpha: 1)
++        cell.textLabel?.textColor = .white
++        cell.textLabel?.numberOfLines = 3
++        cell.textLabel?.text = record.revisions.last?.text.isEmpty == false ? record.revisions.last?.text : FaithgramPreferences.interfaceText("Media message")
++        cell.detailTextLabel?.textColor = .gray
++        let status = record.deletedAt == nil ? "edited" : "deleted"
++        cell.detailTextLabel?.text = "\(status) · \(record.revisions.count) versions · \(record.peerId) / \(record.messageId)"
++        cell.accessoryType = .disclosureIndicator
++        return cell
++    }
++    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
++        tableView.deselectRow(at: indexPath, animated: true)
++        let record = records[indexPath.row]
++        let formatter = DateFormatter()
++        formatter.dateStyle = .medium
++        formatter.timeStyle = .medium
++        let text = record.revisions.enumerated().map { index, revision in
++            let heading = FaithgramPreferences.interfaceText("Version \(index + 1)") + " · " + formatter.string(from: revision.capturedAt)
++            return heading + "\n\n" + (revision.text.isEmpty ? FaithgramPreferences.interfaceText("Media message") : revision.text)
++        }.joined(separator: "\n\n──────────\n\n")
++        (navigationController as? NavigationController)?.pushViewController(FaithgramTextController(context: context, title: FaithgramPreferences.interfaceText("Message history"), text: text, save: nil))
 +    }
 +}
 +
-+private struct PatchClientSettingsEntry: ItemListNodeEntry {
-+    let stableId: Int32
-+    let section: ItemListSectionId
-+    let theme: PresentationTheme
-+    let option: PatchClientOption?
-+    let text: String
-+    let value: Bool
-+
-+    static func ==(lhs: PatchClientSettingsEntry, rhs: PatchClientSettingsEntry) -> Bool {
-+        return lhs.stableId == rhs.stableId && lhs.section == rhs.section
-+            && lhs.theme === rhs.theme && lhs.option == rhs.option
-+            && lhs.text == rhs.text && lhs.value == rhs.value
++final class FaithgramTextController: ViewController {
++    private let context: AccountContext
++    private let editor = UITextView()
++    private let initialText: String
++    private let save: ((String) throws -> Void)?
++    init(context: AccountContext, title: String, text: String, save: ((String) throws -> Void)?) {
++        self.context = context
++        self.initialText = text
++        self.save = save
++        super.init(navigationBarPresentationData: NavigationBarPresentationData(presentationData: context.sharedContext.currentPresentationData.with { $0 }, style: .glass))
++        self.title = title
++        self.statusBar.statusBarStyle = .White
++        if save != nil { navigationItem.rightBarButtonItem = UIBarButtonItem(title: FaithgramPreferences.interfaceText("Save"), style: .done, target: self, action: #selector(saveText)) }
 +    }
-+
-+    static func <(lhs: PatchClientSettingsEntry, rhs: PatchClientSettingsEntry) -> Bool {
-+        return lhs.stableId < rhs.stableId
++    required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
++    override func loadDisplayNode() {
++        displayNode = ASDisplayNode()
++        displayNode.backgroundColor = .black
++        displayNodeDidLoad()
++        editor.backgroundColor = .black
++        editor.textColor = .white
++        editor.font = .preferredFont(forTextStyle: .body)
++        editor.autocapitalizationType = .none
++        editor.autocorrectionType = .no
++        editor.smartQuotesType = .no
++        editor.smartDashesType = .no
++        editor.isEditable = save != nil
++        editor.text = initialText
++        editor.textContainerInset = UIEdgeInsets(top: 20, left: 18, bottom: 20, right: 18)
++        view.addSubview(editor)
 +    }
-+
-+    func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
-+        if let option = self.option {
-+            let arguments = arguments as! PatchClientSettingsArguments
-+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass,
-+                title: option.title, value: self.value, sectionId: self.section, style: .blocks,
-+                updated: { value in arguments.update(option, value) })
++    override func containerLayoutUpdated(_ layout: ContainerViewLayout, transition: ContainedViewLayoutTransition) {
++        super.containerLayoutUpdated(layout, transition: transition)
++        let top = navigationLayout(layout: layout).navigationFrame.maxY
++        let bottom = layout.insets(options: [.input]).bottom
++        transition.updateFrame(view: editor, frame: CGRect(x: 0, y: top, width: layout.size.width, height: max(0, layout.size.height - top - bottom)))
++    }
++    @objc private func saveText() {
++        do {
++            try save?(editor.text ?? "")
++            let _ = self.navigationController?.popViewController(animated: true)
++        } catch {
++            let alert = UIAlertController(title: "faithgram", message: FaithgramPreferences.interfaceText("Invalid rules. Use one regular expression per line, up to 32 expressions and 512 characters each."), preferredStyle: .alert)
++            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("OK"), style: .default))
++            context.sharedContext.mainWindow?.presentNative(alert)
 +        }
-+        return ItemListTextItem(presentationData: presentationData, text: .plain(self.text), sectionId: self.section)
++    }
++}
++
++public func faithgramMessageHistoryController(context: AccountContext, peerId: Int64, namespace: Int32, messageId: Int32) -> ViewController {
++    return FaithgramHistoryController(context: context, message: (peerId, namespace, messageId))
++}
+diff --git a/submodules/SettingsUI/Sources/FaithgramSessionBackupController.swift b/submodules/SettingsUI/Sources/FaithgramSessionBackupController.swift
+new file mode 100644
+index 0000000..2106db3
+--- /dev/null
++++ b/submodules/SettingsUI/Sources/FaithgramSessionBackupController.swift
+@@ -0,0 +1,121 @@
++import Foundation
++import UIKit
++import UniformTypeIdentifiers
++import SwiftSignalKit
++import TelegramCore
++import AccountContext
++
++final class FaithgramSessionBackupController: NSObject, UIDocumentPickerDelegate {
++    private let context: AccountContext
++    private let disposable = MetaDisposable()
++    private var exportURL: URL?
++    init(context: AccountContext) { self.context = context }
++    deinit { disposable.dispose(); cleanupExport() }
++    private func present(_ alert: UIAlertController) { context.sharedContext.mainWindow?.presentNative(alert) }
++    private func failure(_ text: String) {
++        let alert = UIAlertController(title: "faithgram", message: FaithgramPreferences.interfaceText(text), preferredStyle: .alert)
++        alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("OK"), style: .default))
++        present(alert)
++    }
++    private func password(export: Bool, completion: @escaping (String) -> Void) {
++        let alert = UIAlertController(title: FaithgramPreferences.interfaceText(export ? "Encrypt sessions backup" : "Open sessions backup"), message: FaithgramPreferences.interfaceText(export ? "Choose a password with at least 12 characters. Keep it separately; Faithgram cannot recover it. This file restores only sessions that remain active on Telegram servers." : "Enter the backup password."), preferredStyle: .alert)
++        alert.addTextField { field in field.isSecureTextEntry = true; field.autocorrectionType = .no; field.autocapitalizationType = .none }
++        if export { alert.addTextField { field in field.placeholder = FaithgramPreferences.interfaceText("Repeat password"); field.isSecureTextEntry = true; field.autocorrectionType = .no; field.autocapitalizationType = .none } }
++        alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
++        alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText(export ? "Create backup" : "Open"), style: .default, handler: { [weak self] _ in
++            let value = alert.textFields?.first?.text ?? ""
++            guard value.count >= 12, value.utf8.count <= 1024, !export || alert.textFields?.last?.text == value else {
++                self?.failure("The passwords must match and contain at least 12 characters.")
++                return
++            }
++            completion(value)
++        }))
++        present(alert)
++    }
++    func exportSessions() {
++        password(export: true) { [weak self] password in
++            guard let self else { return }
++            self.disposable.set((self.context.sharedContext.activeAccountContexts |> take(1) |> mapToSignal { value -> Signal<[FaithgramSavedSession?], NoError> in
++                return combineLatest(value.accounts.map { _, account, _ in
++                    accountBackupData(postbox: account.account.postbox) |> map { data in data.map { FaithgramSavedSession(testingEnvironment: account.account.testingEnvironment, data: $0) } }
++                })
++            } |> deliverOnMainQueue).start(next: { [weak self] sessions in
++                guard let self else { return }
++                let backup = FaithgramSessionBackup(sessions: sessions.compactMap { $0 })
++                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
++                    do {
++                        let data = try backup.encrypted(password: password)
++                        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("faithgram-export-" + UUID().uuidString, isDirectory: true).appendingPathComponent("faithgram-sessions.fgb")
++                        try FaithgramVault.write(data, to: url)
++                        DispatchQueue.main.async {
++                            guard let self else { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()); return }
++                            self.cleanupExport()
++                            self.exportURL = url
++                            let picker: UIDocumentPickerViewController
++                            if #available(iOS 14.0, *) { picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true) }
++                            else { picker = UIDocumentPickerViewController(url: url, in: .exportToService) }
++                            picker.delegate = self
++                            self.context.sharedContext.mainWindow?.presentNative(picker)
++                        }
++                    } catch { DispatchQueue.main.async { self?.failure("The backup could not be created. Check active accounts and available storage.") } }
++                }
++            }))
++        }
++    }
++    func importSessions() {
++        let picker: UIDocumentPickerViewController
++        if #available(iOS 14.0, *) { picker = UIDocumentPickerViewController(forOpeningContentTypes: [.data], asCopy: true) }
++        else { picker = UIDocumentPickerViewController(documentTypes: ["public.data"], in: .import) }
++        picker.delegate = self
++        context.sharedContext.mainWindow?.presentNative(picker)
++    }
++    private func cleanupExport() {
++        if let url = exportURL { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()); exportURL = nil }
++    }
++    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { cleanupExport() }
++    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
++        if exportURL != nil { cleanupExport(); return }
++        guard let url = urls.first else { return }
++        password(export: false) { [weak self] password in
++            DispatchQueue.global(qos: .userInitiated).async {
++                let access = url.startAccessingSecurityScopedResource()
++                defer { if access { url.stopAccessingSecurityScopedResource() } }
++                do {
++                    guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= 16 * 1024 * 1024 else { throw FaithgramVaultError.invalidFile }
++                    let backup = try FaithgramSessionBackup.decrypt(Data(contentsOf: url), password: password)
++                    DispatchQueue.main.async { self?.confirmRestore(backup) }
++                } catch { DispatchQueue.main.async { self?.failure("The password is incorrect or the backup is invalid. No accounts were changed.") } }
++            }
++        }
++    }
++    private func confirmRestore(_ backup: FaithgramSessionBackup) {
++        let alert = UIAlertController(title: FaithgramPreferences.interfaceText("Restore saved sessions"), message: FaithgramPreferences.interfaceText("Restore \(backup.sessions.count) saved sessions? Existing accounts will be kept. Sessions revoked on Telegram servers require a new login."), preferredStyle: .alert)
++        alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
++        alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Restore"), style: .default, handler: { [weak self] _ in
++            guard let self else { return }
++            self.disposable.set((self.context.sharedContext.accountManager.transaction { transaction -> Int in
++                var existing = Set<String>()
++                for record in transaction.getRecords() {
++                    var testing = false
++                    var peer: Int64?
++                    for attribute in record.attributes {
++                        if case let .environment(value) = attribute { testing = value.environment == .test }
++                        if case let .backupData(value) = attribute { peer = value.data?.peerId }
++                    }
++                    if let peer { existing.insert("\(testing):\(peer)") }
++                }
++                var restored = 0
++                for session in backup.sessions {
++                    let identity = "\(session.testingEnvironment):\(session.data.peerId)"
++                    if existing.contains(identity) { continue }
++                    let attributes: [TelegramAccountManagerTypes.Attribute] = [.environment(AccountEnvironmentAttribute(environment: session.testingEnvironment ? .test : .production)), .backupData(AccountBackupDataAttribute(data: session.data))]
++                    let _ = transaction.createRecord(attributes)
++                    existing.insert(identity)
++                    restored += 1
++                }
++                return restored
++            } |> deliverOnMainQueue).start(next: { [weak self] count in self?.failure("\(count) saved sessions added. Telegram will validate them when they connect.") }))
++        }))
++        present(alert)
++    }
++}
+diff --git a/submodules/SettingsUI/Sources/PatchClientSettingsController.swift b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
+new file mode 100644
+index 0000000..794a2f5
+--- /dev/null
++++ b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
+@@ -0,0 +1,304 @@
++import Foundation
++import UIKit
++import AsyncDisplayKit
++import Display
++import SwiftSignalKit
++import TelegramCore
++import TelegramApi
++import TelegramPresentationData
++import AccountContext
++
++private enum FaithgramCategory: String, CaseIterable {
++    case accounts, messages, privacy, appearance, media, chats, notifications, badges
++    var title: String { return self.rawValue.capitalized }
++    var symbol: String {
++        switch self {
++        case .accounts: return "person.crop.circle"
++        case .messages: return "bubble.left.and.bubble.right"
++        case .privacy: return "lock.shield"
++        case .appearance: return "paintbrush"
++        case .media: return "waveform"
++        case .chats: return "folder"
++        case .notifications: return "bell.badge"
++        case .badges: return "checkmark.seal"
++        }
++    }
++    var options: [PatchClientOption] {
++        switch self {
++        case .accounts: return [.unlimitedAccounts, .noPhoneException]
++        case .messages: return [.saveDeletedMessages, .saveEditHistory, .regexFilters, .formattingPanel]
++        case .privacy: return [.alwaysOffline, .blockTyping, .blockCloudReads, .localDrafts, .hideAds, .hideProxyPromo]
++        case .appearance: return [.lowercaseInterface, .localPremium, .hideStories, .disableStoryCamera, .dynamicIsland]
++        case .media: return [.localTranscription, .localTranslation, .archiveDownloadedMedia]
++        case .chats: return [.hideAllChats, .foldersAtBottom, .rememberFolder]
++        case .notifications: return [.hidePinnedNotifications, .hideMentionNotifications]
++        case .badges: return []
++        }
++    }
++}
++
++private enum FaithgramRow {
++    case category(FaithgramCategory)
++    case toggle(PatchClientOption)
++    case ghost
++    case text(title: String, key: String, fallback: String)
++    case badge(peerId: Int64, role: FaithgramPreferences.Badge)
++    case addBadge
++    case action(FaithgramAction)
++}
++
++private enum FaithgramAction: String {
++    case exportSessions = "Export sessions backup"
++    case restoreSessions = "Restore sessions backup"
++    case history = "Message history"
++    case lockNow = "Lock now"
++    case passcode = "Passcode and Face ID"
++    case theme = "Theme, text size and chat appearance"
++    case stickers = "Stickers and emoji"
++    case downloads = "Downloads and media quality"
++    case privateMedia = "Save media from private chats"
++    case groupMedia = "Save media from groups"
++    case channelMedia = "Save media from channels"
++    case notifications = "Sounds and notification settings"
++}
++
++private final class FaithgramToggle: UISwitch {
++    var changed: ((Bool) -> Void)?
++    override init(frame: CGRect) {
++        super.init(frame: frame)
++        self.addTarget(self, action: #selector(valueUpdated), for: .valueChanged)
++    }
++    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
++    @objc private func valueUpdated() { self.changed?(self.isOn) }
++}
++
++private final class FaithgramSettingsController: ViewController, UITableViewDataSource, UITableViewDelegate {
++    private let context: AccountContext
++    private let category: FaithgramCategory?
++    private let table = UITableView(frame: .zero, style: .insetGrouped)
++    private var rows: [FaithgramRow] = []
++    private var observer: NSObjectProtocol?
++    private let actionDisposable = MetaDisposable()
++    private lazy var sessionBackup = FaithgramSessionBackupController(context: self.context)
++
++    init(context: AccountContext, category: FaithgramCategory? = nil) {
++        self.context = context
++        self.category = category
++        let data = context.sharedContext.currentPresentationData.with { $0 }
++        super.init(navigationBarPresentationData: NavigationBarPresentationData(presentationData: data, style: .glass))
++        self.title = category.map { FaithgramPreferences.interfaceText($0.title) } ?? "faithgram"
++        self.navigationItem.backBarButtonItem = UIBarButtonItem(title: FaithgramPreferences.interfaceText("Back"), style: .plain, target: nil, action: nil)
++        self.statusBar.statusBarStyle = .White
++        self.observer = NotificationCenter.default.addObserver(forName: FaithgramPreferences.changed, object: nil, queue: .main) { [weak self] _ in self?.reloadRows() }
++        self.reloadRows()
++    }
++    required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
++    deinit { actionDisposable.dispose(); if let observer = self.observer { NotificationCenter.default.removeObserver(observer) } }
++
++    override func loadDisplayNode() {
++        self.displayNode = ASDisplayNode()
++        self.displayNode.backgroundColor = .black
++        self.displayNodeDidLoad()
++        self.table.backgroundColor = .black
++        self.table.separatorColor = UIColor(white: 0.18, alpha: 1)
++        self.table.rowHeight = UITableView.automaticDimension
++        self.table.estimatedRowHeight = 64
++        self.table.dataSource = self
++        self.table.delegate = self
++        self.table.contentInsetAdjustmentBehavior = .never
++        self.view.addSubview(self.table)
++        self.navigationBar?.updateBackgroundAlpha(0, transition: .immediate)
++    }
++    override func containerLayoutUpdated(_ layout: ContainerViewLayout, transition: ContainedViewLayoutTransition) {
++        super.containerLayoutUpdated(layout, transition: transition)
++        let top = self.navigationLayout(layout: layout).navigationFrame.maxY
++        transition.updateFrame(view: self.table, frame: CGRect(x: 0, y: top, width: layout.size.width, height: layout.size.height - top))
++        self.table.contentInset.bottom = layout.intrinsicInsets.bottom + 16
++        if self.category == nil { self.updateHeader(width: layout.size.width) }
++    }
++    private func updateHeader(width: CGFloat) {
++        let header = UIView(frame: CGRect(x: 0, y: 0, width: width, height: 270))
++        let icon = UIImageView(frame: CGRect(x: (width - 92) / 2, y: 38, width: 92, height: 92))
++        if let path = Bundle.main.path(forResource: "FaithgramIcon", ofType: "png") { icon.image = UIImage(contentsOfFile: path) }
++        else { icon.image = UIImage(systemName: "paperplane.fill"); icon.tintColor = .white }
++        icon.contentMode = .scaleAspectFit
++        icon.isAccessibilityElement = false
++        header.addSubview(icon)
++        let title = UILabel(frame: CGRect(x: 24, y: 153, width: width - 48, height: 42))
++        title.text = "faithgram"
++        title.font = .systemFont(ofSize: 30, weight: .semibold)
++        title.textAlignment = .center
++        title.textColor = .white
++        header.addSubview(title)
++        let version = UILabel(frame: CGRect(x: 24, y: 196, width: width - 48, height: 25))
++        let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
++        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
++        version.text = "\(appVersion) (\(build))"
++        version.font = .preferredFont(forTextStyle: .subheadline)
++        version.textAlignment = .center
++        version.textColor = .gray
++        header.addSubview(version)
++        self.table.tableHeaderView = header
++    }
++    private func reloadRows() {
++        self.title = self.category.map { FaithgramPreferences.interfaceText($0.title) } ?? "faithgram"
++        if let category = self.category {
++            self.rows = category.options.map(FaithgramRow.toggle)
++            if category == .privacy {
++                self.rows.insert(.ghost, at: 0)
++                self.rows += [.action(.lockNow), .action(.passcode)]
++            }
++            if category == .accounts { self.rows += [.action(.exportSessions), .action(.restoreSessions)] }
++            if category == .appearance { self.rows += [.action(.theme), .action(.stickers)] }
++            if category == .notifications { self.rows.append(.action(.notifications)) }
++            if category == .messages {
++                self.rows += [.text(title: "Deleted mark", key: "deletedMark", fallback: "🧹"),
++                              .text(title: "Edited mark", key: "editedMark", fallback: "🧹"),
++                              .text(title: "Regex rules", key: "regexRules", fallback: ""), .action(.history)]
++            }
++            if category == .media {
++                self.rows.append(.text(title: "Translation language", key: "translationTarget", fallback: Locale.current.identifier.components(separatedBy: CharacterSet(charactersIn: "_-" )).first ?? "en"))
++                self.rows += [.action(.privateMedia), .action(.groupMedia), .action(.channelMedia), .action(.downloads)]
++            }
++            if category == .badges {
++                self.rows = FaithgramPreferences.badgeGrants.sorted { (Int64($0.key) ?? 0) < (Int64($1.key) ?? 0) }.compactMap { key, value in
++                    guard let id = Int64(key) else { return nil }
++                    return .badge(peerId: id, role: value)
++                }
++                if self.context.account.peerId.id._internalGetInt64Value() == FaithgramPreferences.badgeOwnerId { self.rows.append(.addBadge) }
++            }
++        } else { self.rows = FaithgramCategory.allCases.map(FaithgramRow.category) }
++        if self.isNodeLoaded { self.table.reloadData() }
++    }
++    func numberOfSections(in tableView: UITableView) -> Int { return 1 }
++    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { return self.rows.count }
++    func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { return self.category == nil ? "functions" : nil }
++    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
++        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
++        cell.backgroundColor = UIColor(white: 0.105, alpha: 1)
++        cell.textLabel?.textColor = .white
++        cell.textLabel?.font = .preferredFont(forTextStyle: .body)
++        cell.textLabel?.adjustsFontForContentSizeCategory = true
++        cell.detailTextLabel?.textColor = .gray
++        cell.detailTextLabel?.font = .preferredFont(forTextStyle: .footnote)
++        cell.detailTextLabel?.numberOfLines = 0
++        cell.tintColor = .white
++        switch self.rows[indexPath.row] {
++        case let .category(category):
++            cell.textLabel?.text = FaithgramPreferences.interfaceText(category.title)
++            cell.imageView?.image = UIImage(systemName: category.symbol)
++            cell.accessoryType = .disclosureIndicator
++        case let .toggle(option):
++            cell.textLabel?.text = FaithgramPreferences.interfaceText(option.title)
++            cell.detailTextLabel?.text = FaithgramPreferences.interfaceText(option.explanation)
++            let toggle = FaithgramToggle(frame: .zero)
++            toggle.isOn = PatchClientPolicy.isEnabled(option)
++            toggle.accessibilityLabel = cell.textLabel?.text
++            toggle.changed = { value in PatchClientPolicy.setEnabled(option, value) }
++            cell.accessoryView = toggle
++            cell.selectionStyle = .none
++        case .ghost:
++            cell.textLabel?.text = FaithgramPreferences.interfaceText("Ghost mode")
++            cell.detailTextLabel?.text = FaithgramPreferences.interfaceText("Offline status, no read receipts, no typing or upload indicators.")
++            cell.imageView?.image = UIImage(systemName: "moon.fill")
++            let toggle = FaithgramToggle(frame: .zero)
++            toggle.isOn = FaithgramPreferences.ghostMode
++            toggle.changed = { [weak self] value in
++                FaithgramPreferences.setGhostMode(value)
++                if value, let context = self?.context { let _ = context.account.network.request(Api.functions.account.updateStatus(offline: .boolTrue)).startStandalone() }
++            }
++            cell.accessoryView = toggle
++            cell.selectionStyle = .none
++        case let .text(title, key, fallback):
++            cell.textLabel?.text = FaithgramPreferences.interfaceText(title)
++            let value = FaithgramPreferences.text(key, fallback: fallback)
++            cell.detailTextLabel?.text = value.isEmpty ? FaithgramPreferences.interfaceText("Not set") : value
++            cell.accessoryType = .disclosureIndicator
++        case let .badge(peerId, role):
++            cell.textLabel?.text = "\(peerId)"
++            cell.detailTextLabel?.text = "faithgram · \(role.title)"
++            cell.imageView?.image = UIImage(systemName: role == .betaTester ? "testtube.2" : "checkmark.seal")
++        case let .action(action):
++            cell.textLabel?.text = FaithgramPreferences.interfaceText(action.rawValue)
++            cell.accessoryType = .disclosureIndicator
++            if action == .exportSessions || action == .restoreSessions { cell.detailTextLabel?.text = FaithgramPreferences.interfaceText("Password-protected backup of active sessions") }
++        case .addBadge:
++            cell.textLabel?.text = FaithgramPreferences.interfaceText("Assign badge")
++            cell.imageView?.image = UIImage(systemName: "plus.circle")
++        }
++        return cell
++    }
++    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
++        tableView.deselectRow(at: indexPath, animated: true)
++        switch self.rows[indexPath.row] {
++        case let .category(category):
++            (self.navigationController as? NavigationController)?.pushViewController(FaithgramSettingsController(context: self.context, category: category))
++        case let .action(action): self.perform(action)
++        case let .text(title, key, fallback):
++            if key == "regexRules" {
++                self.push(FaithgramTextController(context: context, title: FaithgramPreferences.interfaceText("Regex rules"), text: FaithgramPreferences.text(key), save: { text in
++                    let _ = try FaithgramMessageFilter.compile(text)
++                    FaithgramPreferences.setText(key, text)
++                }))
++                return
++            }
++            let alert = UIAlertController(title: FaithgramPreferences.interfaceText(title), message: key == "translationTarget" ? FaithgramPreferences.interfaceText("Language code, for example en, ru, de or es. iOS may ask to download a language model.") : nil, preferredStyle: .alert)
++            alert.addTextField { field in
++                field.text = FaithgramPreferences.text(key, fallback: fallback)
++                field.autocapitalizationType = .none
++                field.autocorrectionType = .no
++            }
++            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
++            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Save"), style: .default, handler: { _ in FaithgramPreferences.setText(key, alert.textFields?.first?.text ?? "") }))
++            self.context.sharedContext.mainWindow?.presentNative(alert)
++        case .addBadge: self.editBadge(peerId: nil)
++        case let .badge(peerId, _):
++            if self.context.account.peerId.id._internalGetInt64Value() == FaithgramPreferences.badgeOwnerId { self.editBadge(peerId: peerId) }
++        default: break
++        }
++    }
++    private func push(_ controller: ViewController) {
++        (self.navigationController as? NavigationController)?.pushViewController(controller)
++    }
++    private func perform(_ action: FaithgramAction) {
++        switch action {
++        case .exportSessions: sessionBackup.exportSessions()
++        case .restoreSessions: sessionBackup.importSessions()
++        case .history: push(FaithgramHistoryController(context: context))
++        case .lockNow:
++            actionDisposable.set((context.sharedContext.accountManager.transaction { $0.getAccessChallengeData() } |> deliverOnMainQueue).start(next: { [weak self] challenge in
++                guard let self else { return }
++                if case .none = challenge { self.perform(.passcode) }
++                else { self.context.sharedContext.appLockContext.lock() }
++            }))
++        case .passcode:
++            actionDisposable.set((passcodeOptionsAccessController(context: context, pushController: { [weak self] in self?.push($0) }, completion: { [weak self] success in
++                if success, let self { self.push(passcodeOptionsController(context: self.context)) }
++            }) |> deliverOnMainQueue).start(next: { [weak self] controller in if let controller { self?.push(controller) } }))
++        case .theme: push(themeSettingsController(context: context))
++        case .stickers: push(installedStickerPacksController(context: context, mode: .general))
++        case .downloads: push(dataAndStorageController(context: context))
++        case .privateMedia: push(saveIncomingMediaController(context: context, scope: .peerType(.privateChats)))
++        case .groupMedia: push(saveIncomingMediaController(context: context, scope: .peerType(.groups)))
++        case .channelMedia: push(saveIncomingMediaController(context: context, scope: .peerType(.channels)))
++        case .notifications: push(notificationsAndSoundsController(context: context, exceptionsList: nil))
++        }
++    }
++    private func editBadge(peerId: Int64?) {
++        let alert = UIAlertController(title: "faithgram badge", message: FaithgramPreferences.interfaceText("Enter a user peer id. Badges are stored on this installation."), preferredStyle: .alert)
++        alert.addTextField { field in field.keyboardType = .numberPad; field.text = peerId.map(String.init) }
++        for role in FaithgramPreferences.Badge.allCases {
++            alert.addAction(UIAlertAction(title: role.title, style: .default, handler: { _ in
++                guard let value = alert.textFields?.first?.text, let id = Int64(value), id > 0 else { return }
++                FaithgramPreferences.setBadge(role, peerId: id)
++            }))
++        }
++        if let peerId = peerId { alert.addAction(UIAlertAction(title: "remove badge", style: .destructive, handler: { _ in FaithgramPreferences.setBadge(nil, peerId: peerId) })) }
++        alert.addAction(UIAlertAction(title: "cancel", style: .cancel))
++        self.context.sharedContext.mainWindow?.presentNative(alert)
 +    }
 +}
 +
 +public func patchClientSettingsController(context: AccountContext) -> ViewController {
-+    let revision = ValuePromise<Int>(0, ignoreRepeated: false)
-+    let arguments = PatchClientSettingsArguments(update: { option, value in
-+        PatchClientPolicy.setEnabled(option, value)
-+        revision.set(0)
-+    })
-+    let signal = combineLatest(context.sharedContext.presentationData, revision.get())
-+    |> deliverOnMainQueue
-+    |> map { presentationData, _ -> (ItemListControllerState, (ItemListNodeState, Any)) in
-+        var entries: [PatchClientSettingsEntry] = []
-+        entries.append(PatchClientSettingsEntry(stableId: 0, section: 0, theme: presentationData.theme,
-+            option: nil,
-+            text: "Settings apply to all accounts on this installation. All options are off by default.",
-+            value: false))
-+        for (index, option) in PatchClientOption.allCases.enumerated() {
-+            let section = Int32(index + 1)
-+            let stableId = Int32(index * 2 + 1)
-+            entries.append(PatchClientSettingsEntry(stableId: stableId, section: section,
-+                theme: presentationData.theme, option: option, text: "", value: PatchClientPolicy.isEnabled(option)))
-+            entries.append(PatchClientSettingsEntry(stableId: stableId + 1, section: section,
-+                theme: presentationData.theme, option: nil, text: option.explanation, value: false))
-+        }
-+        let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData),
-+            title: .text("Faithgram"), leftNavigationButton: nil, rightNavigationButton: nil,
-+            backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
-+        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData),
-+            entries: entries, style: .blocks, animateChanges: false)
-+        return (controllerState, (listState, arguments))
-+    }
-+    return ItemListController(context: context, state: signal)
++    return FaithgramSettingsController(context: context)
 +}
+diff --git a/submodules/TelegramCore/Sources/Account/AccountManager.swift b/submodules/TelegramCore/Sources/Account/AccountManager.swift
+index 3f2b479..b73ccbb 100644
+--- a/submodules/TelegramCore/Sources/Account/AccountManager.swift
++++ b/submodules/TelegramCore/Sources/Account/AccountManager.swift
+@@ -137,6 +137,7 @@ private var declaredEncodables: Void = {
+     declareEncodable(ForwardSourceInfoAttribute.self, f: { ForwardSourceInfoAttribute(decoder: $0) })
+     declareEncodable(SourceReferenceMessageAttribute.self, f: { SourceReferenceMessageAttribute(decoder: $0) })
+     declareEncodable(SourceAuthorInfoMessageAttribute.self, f: { SourceAuthorInfoMessageAttribute(decoder: $0) })
++    declareEncodable(FaithgramDeletedMessageAttribute.self, f: { FaithgramDeletedMessageAttribute(decoder: $0) })
+     declareEncodable(EditedMessageAttribute.self, f: { EditedMessageAttribute(decoder: $0) })
+     declareEncodable(ReplyMarkupMessageAttribute.self, f: { ReplyMarkupMessageAttribute(decoder: $0) })
+     declareEncodable(OutgoingChatContextResultMessageAttribute.self, f: { OutgoingChatContextResultMessageAttribute(decoder: $0) })
 diff --git a/submodules/TelegramCore/Sources/Network/Download.swift b/submodules/TelegramCore/Sources/Network/Download.swift
 index ab16e78..8470c10 100644
 --- a/submodules/TelegramCore/Sources/Network/Download.swift
@@ -153,6 +1151,34 @@ index ab16e78..8470c10 100644
                  if let result = data.2(Buffer(data: response)) {
                      return BoxedMessage(result)
                  }
+diff --git a/submodules/TelegramCore/Sources/Network/FetchedMediaResource.swift b/submodules/TelegramCore/Sources/Network/FetchedMediaResource.swift
+index 1f6b2e0..628ee3c 100644
+--- a/submodules/TelegramCore/Sources/Network/FetchedMediaResource.swift
++++ b/submodules/TelegramCore/Sources/Network/FetchedMediaResource.swift
+@@ -80,6 +80,23 @@ public func fetchedMediaResource(
+     reportResultStatus: Bool = false,
+     preferBackgroundReferenceRevalidation: Bool = false,
+     continueInBackground: Bool = false
++) -> Signal<FetchResourceSourceType, FetchResourceError> {
++    return FaithgramArchivedMedia.restore(mediaBox: mediaBox, resource: reference.resource)
++    |> mapToSignal { _ in
++        return faithgramFetchedMediaResource(mediaBox: mediaBox, userLocation: userLocation, userContentType: userContentType, reference: reference, ranges: ranges, statsCategory: statsCategory, reportResultStatus: reportResultStatus, preferBackgroundReferenceRevalidation: preferBackgroundReferenceRevalidation, continueInBackground: continueInBackground)
++    }
++}
++
++private func faithgramFetchedMediaResource(
++    mediaBox: MediaBox,
++    userLocation: MediaResourceUserLocation,
++    userContentType: MediaResourceUserContentType,
++    reference: MediaResourceReference,
++    ranges: [(Range<Int64>, MediaBoxFetchPriority)]?,
++    statsCategory: MediaResourceStatsCategory = .generic,
++    reportResultStatus: Bool = false,
++    preferBackgroundReferenceRevalidation: Bool = false,
++    continueInBackground: Bool = false
+ ) -> Signal<FetchResourceSourceType, FetchResourceError> {
+     var isRandomAccessAllowed = true
+     switch reference {
 diff --git a/submodules/TelegramCore/Sources/Network/Network.swift b/submodules/TelegramCore/Sources/Network/Network.swift
 index 5410e71..2892434 100644
 --- a/submodules/TelegramCore/Sources/Network/Network.swift
@@ -207,12 +1233,714 @@ index 5410e71..2892434 100644
                  if let result = data.2.parse(Buffer(data: response)) {
                      return BoxedMessage(result)
                  }
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramArchivedMedia.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramArchivedMedia.swift
+new file mode 100644
+index 0000000..356dfbf
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramArchivedMedia.swift
+@@ -0,0 +1,49 @@
++import Foundation
++import Postbox
++import SwiftSignalKit
++
++enum FaithgramArchivedMedia {
++    private static let queue = DispatchQueue(label: "faithgram.media.archive", qos: .utility)
++    private static func archive(_ mediaBox: MediaBox) throws -> FaithgramMediaArchive {
++        let root = URL(fileURLWithPath: mediaBox.basePath).deletingLastPathComponent()
++        let key = try FaithgramVault.accountKey("media:" + root.deletingLastPathComponent().lastPathComponent)
++        return try FaithgramMediaArchive(directory: root.appendingPathComponent("faithgram-media", isDirectory: true), key: key)
++    }
++    static func capture(_ message: Message, mediaBox: MediaBox) {
++        guard PatchClientPolicy.isEnabled(.archiveDownloadedMedia), !message.containsSecretMedia,
++              message.id.peerId.namespace != Namespaces.Peer.SecretChat,
++              FaithgramPreferences.mediaRules[String(message.id.peerId.toInt64())] != false else { return }
++        var resources: [MediaResource] = []
++        for media in message.media {
++            if let image = media as? TelegramMediaImage { resources += image.representations.map { $0.resource } }
++            if let file = media as? TelegramMediaFile { resources.append(file.resource); resources += file.previewRepresentations.map { $0.resource } }
++        }
++        let paths = resources.compactMap { resource -> (String, URL)? in
++            guard let path = mediaBox.completedResourcePath(resource) else { return nil }
++            return (resource.id.stringRepresentation, URL(fileURLWithPath: path))
++        }
++        queue.async {
++            do {
++                let archive = try archive(mediaBox)
++                for (resource, path) in paths where FileManager.default.fileExists(atPath: path.path) { try archive.save(resource: resource, source: path) }
++            } catch { FaithgramPreferences.setText("historyError", "Downloaded media could not be archived. Check available storage and device access.") }
++        }
++    }
++    static func restore(mediaBox: MediaBox, resource: MediaResource) -> Signal<Void, FetchResourceError> {
++        let root = URL(fileURLWithPath: mediaBox.basePath).deletingLastPathComponent()
++        guard FileManager.default.fileExists(atPath: root.appendingPathComponent("faithgram-media").path), mediaBox.completedResourcePath(resource) == nil else { return .single(()) }
++        return Signal { subscriber in
++            queue.async {
++                if mediaBox.completedResourcePath(resource) == nil {
++                    do {
++                        let destination = URL(fileURLWithPath: mediaBox.storePathsForId(resource.id).complete)
++                        let _ = try archive(mediaBox).restore(resource: resource.id.stringRepresentation, destination: destination)
++                    } catch { FaithgramPreferences.setText("historyError", "Archived media could not be opened. The archive may be damaged or unavailable.") }
++                }
++                subscriber.putNext(())
++                subscriber.putCompletion()
++            }
++            return EmptyDisposable
++        }
++    }
++}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramHistoryStore.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramHistoryStore.swift
+new file mode 100644
+index 0000000..7062abb
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramHistoryStore.swift
+@@ -0,0 +1,72 @@
++import Foundation
++
++public struct FaithgramHistoryRevision: Codable, Equatable {
++    public let text: String
++    public let messageDate: Int32
++    public let capturedAt: Date
++    public let authorId: Int64?
++    public let media: Data
++    public let attributes: Data
++    public init(text: String, messageDate: Int32, authorId: Int64?, media: Data, attributes: Data) {
++        self.text = text
++        self.messageDate = messageDate
++        self.authorId = authorId
++        self.media = media
++        self.attributes = attributes
++        self.capturedAt = Date()
++    }
++    public func sameContent(as other: FaithgramHistoryRevision) -> Bool {
++        return text == other.text && media == other.media && attributes == other.attributes
++    }
++}
++
++public struct FaithgramHistoryRecord: Codable {
++    public let peerId: Int64
++    public let namespace: Int32
++    public let messageId: Int32
++    public var deletedAt: Date?
++    public var revisions: [FaithgramHistoryRevision]
++    public var key: String { return "\(peerId)_\(namespace)_\(messageId)" }
++}
++
++/// This directory is independent of the message database and media cache.
++/// Atomic authenticated files survive cache cleanup and application relaunch.
++public final class FaithgramHistoryStore {
++    private static let lock = NSRecursiveLock()
++    private let directory: URL
++    private let encryptionKey: Data
++    public init(directory: URL, encryptionKey: Data) throws {
++        guard encryptionKey.count == 32 else { throw FaithgramVaultError.invalidKey }
++        self.directory = directory
++        self.encryptionKey = encryptionKey
++    }
++    public func record(peerId: Int64, namespace: Int32, messageId: Int32) throws -> FaithgramHistoryRecord? {
++        Self.lock.lock(); defer { Self.lock.unlock() }
++        let name = "\(peerId)_\(namespace)_\(messageId)"
++        let path = directory.appendingPathComponent(name + ".fgh")
++        if !FileManager.default.fileExists(atPath: path.path) { return nil }
++        let data = try FaithgramVault.open(Data(contentsOf: path), key: encryptionKey, context: "faithgram.history.v1|" + name)
++        let record = try JSONDecoder().decode(FaithgramHistoryRecord.self, from: data)
++        guard record.key == name else { throw FaithgramVaultError.invalidFile }
++        return record
++    }
++    public func capture(peerId: Int64, namespace: Int32, messageId: Int32, revision: FaithgramHistoryRevision, deleted: Bool) throws {
++        Self.lock.lock(); defer { Self.lock.unlock() }
++        var record = try self.record(peerId: peerId, namespace: namespace, messageId: messageId) ?? FaithgramHistoryRecord(peerId: peerId, namespace: namespace, messageId: messageId, deletedAt: nil, revisions: [])
++        if record.revisions.last.map({ !$0.sameContent(as: revision) }) ?? true { record.revisions.append(revision) }
++        if deleted { record.deletedAt = record.deletedAt ?? Date() }
++        let data = try FaithgramVault.seal(JSONEncoder().encode(record), key: encryptionKey, context: "faithgram.history.v1|" + record.key)
++        try FaithgramVault.write(data, to: directory.appendingPathComponent(record.key + ".fgh"))
++    }
++    public func records() throws -> [FaithgramHistoryRecord] {
++        Self.lock.lock(); defer { Self.lock.unlock() }
++        if !FileManager.default.fileExists(atPath: directory.path) { return [] }
++        return try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).filter { $0.pathExtension == "fgh" }.map { url in
++            let name = url.deletingPathExtension().lastPathComponent
++            let data = try FaithgramVault.open(Data(contentsOf: url), key: encryptionKey, context: "faithgram.history.v1|" + name)
++            let record = try JSONDecoder().decode(FaithgramHistoryRecord.self, from: data)
++            guard record.key == name else { throw FaithgramVaultError.invalidFile }
++            return record
++        }.sorted { ($0.deletedAt ?? $0.revisions.last?.capturedAt ?? .distantPast) > ($1.deletedAt ?? $1.revisions.last?.capturedAt ?? .distantPast) }
++    }
++}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramMediaArchive.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramMediaArchive.swift
+new file mode 100644
+index 0000000..bce2ca6
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramMediaArchive.swift
+@@ -0,0 +1,80 @@
++import Foundation
++import CryptoKit
++
++public final class FaithgramMediaArchive {
++    private static let lock = NSLock()
++    private let directory: URL
++    private let key: Data
++    private let chunkSize = 512 * 1024
++    public static let maximumFileSize = 256 * 1024 * 1024
++    public init(directory: URL, key: Data) throws {
++        guard key.count == 32 else { throw FaithgramVaultError.invalidKey }
++        self.directory = directory
++        self.key = key
++    }
++    private func name(_ resource: String) -> String { SHA256.hash(data: Data(resource.utf8)).map { String(format: "%02x", $0) }.joined() }
++    private func context(_ name: String, _ index: Int, final: Bool = false) -> String { "faithgram.media.v1|\(name)|\(index)|\(final ? "end" : "chunk")" }
++    public func save(resource: String, source: URL) throws {
++        Self.lock.lock(); defer { Self.lock.unlock() }
++        let name = self.name(resource)
++        let destination = directory.appendingPathComponent(name + ".fgm")
++        if FileManager.default.fileExists(atPath: destination.path) { return }
++        guard let size = try source.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= Self.maximumFileSize else { return }
++        let temporary = directory.appendingPathComponent(UUID().uuidString + ".tmp")
++        defer { try? FileManager.default.removeItem(at: temporary) }
++        try FaithgramVault.write(Data("FGM1".utf8), to: temporary)
++        let input = try FileHandle(forReadingFrom: source)
++        let output = try FileHandle(forWritingTo: temporary)
++        defer { try? input.close(); try? output.close() }
++        let _ = try output.seekToEnd()
++        var index = 0
++        var total = 0
++        while let data = try input.read(upToCount: chunkSize), !data.isEmpty {
++            total += data.count
++            guard total <= Self.maximumFileSize else { throw FaithgramVaultError.invalidFile }
++            let sealed = try FaithgramVault.seal(data, key: key, context: context(name, index))
++            var count = UInt32(sealed.count).bigEndian
++            try output.write(contentsOf: withUnsafeBytes(of: &count) { Data($0) })
++            try output.write(contentsOf: sealed)
++            index += 1
++        }
++        try output.write(contentsOf: Data(repeating: 0, count: 4))
++        try output.write(contentsOf: FaithgramVault.seal(Data(), key: key, context: context(name, index, final: true)))
++        try output.synchronize()
++        try FileManager.default.moveItem(at: temporary, to: destination)
++    }
++    public func restore(resource: String, destination: URL) throws -> Bool {
++        Self.lock.lock(); defer { Self.lock.unlock() }
++        let name = self.name(resource)
++        let source = directory.appendingPathComponent(name + ".fgm")
++        if !FileManager.default.fileExists(atPath: source.path) { return false }
++        let temporary = destination.deletingLastPathComponent().appendingPathComponent("faithgram-media-" + UUID().uuidString + ".tmp")
++        defer { try? FileManager.default.removeItem(at: temporary) }
++        try FaithgramVault.write(Data(), to: temporary)
++        let input = try FileHandle(forReadingFrom: source)
++        let output = try FileHandle(forWritingTo: temporary)
++        defer { try? input.close(); try? output.close() }
++        guard try input.read(upToCount: 4) == Data("FGM1".utf8) else { throw FaithgramVaultError.invalidFile }
++        var index = 0
++        var total = 0
++        while true {
++            guard let size = try input.read(upToCount: 4), size.count == 4 else { throw FaithgramVaultError.invalidFile }
++            let count = size.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
++            if count == 0 {
++                guard let footer = try input.read(upToCount: 28), footer.count == 28 else { throw FaithgramVaultError.invalidFile }
++                guard try FaithgramVault.open(footer, key: key, context: context(name, index, final: true)).isEmpty,
++                      (try input.read(upToCount: 1))?.isEmpty != false else { throw FaithgramVaultError.invalidFile }
++                break
++            }
++            guard count > 28, count <= UInt32(chunkSize + 28), let sealed = try input.read(upToCount: Int(count)), sealed.count == Int(count) else { throw FaithgramVaultError.invalidFile }
++            let data = try FaithgramVault.open(sealed, key: key, context: context(name, index))
++            total += data.count
++            guard total <= Self.maximumFileSize else { throw FaithgramVaultError.invalidFile }
++            try output.write(contentsOf: data)
++            index += 1
++        }
++        try output.synchronize()
++        if !FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.moveItem(at: temporary, to: destination) }
++        return true
++    }
++}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramMessageFilter.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramMessageFilter.swift
+new file mode 100644
+index 0000000..9ff840d
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramMessageFilter.swift
+@@ -0,0 +1,46 @@
++import Foundation
++
++public enum FaithgramMessageFilterError: Error {
++    case tooManyRules, ruleTooLong, invalidExpression
++}
++public enum FaithgramMessageFilter {
++    private static let lock = NSLock()
++    private static var cachedText = ""
++    private static var cachedRules: [NSRegularExpression] = []
++
++    public static func compile(_ text: String) throws -> [NSRegularExpression] {
++        let rules = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
++        guard rules.count <= 32 else { throw FaithgramMessageFilterError.tooManyRules }
++        return try rules.map { pattern in
++            guard pattern.utf16.count <= 512 else { throw FaithgramMessageFilterError.ruleTooLong }
++            guard let regex = try? NSRegularExpression(pattern: pattern) else { throw FaithgramMessageFilterError.invalidExpression }
++            return regex
++        }
++    }
++    public static func matches(_ text: String, expressions: [NSRegularExpression], budget: TimeInterval = 0.006) -> Bool {
++        let input = String(text.prefix(4096))
++        let deadline = Date().addingTimeInterval(budget)
++        for expression in expressions {
++            if Date() >= deadline { break }
++            var found = false
++            expression.enumerateMatches(in: input, options: [.reportProgress], range: NSRange(location: 0, length: (input as NSString).length)) { result, _, stop in
++                if result != nil { found = true; stop.pointee = true }
++                else if Date() >= deadline { stop.pointee = true }
++            }
++            if found { return true }
++        }
++        return false
++    }
++    public static func matches(_ text: String) -> Bool {
++        guard PatchClientPolicy.isEnabled(.regexFilters) else { return false }
++        let source = FaithgramPreferences.text("regexRules")
++        lock.lock()
++        if cachedText != source {
++            cachedText = source
++            cachedRules = (try? compile(source)) ?? []
++        }
++        let expressions = cachedRules
++        lock.unlock()
++        return matches(text, expressions: expressions)
++    }
++}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramMessageHistory.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramMessageHistory.swift
+new file mode 100644
+index 0000000..b34c677
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramMessageHistory.swift
+@@ -0,0 +1,61 @@
++import Foundation
++import Postbox
++
++public final class FaithgramDeletedMessageAttribute: MessageAttribute {
++    public let date: Int32
++    public init(date: Int32) { self.date = date }
++    public required init(decoder: PostboxDecoder) { self.date = decoder.decodeInt32ForKey("d", orElse: 0) }
++    public func encode(_ encoder: PostboxEncoder) { encoder.encodeInt32(date, forKey: "d") }
++}
++
++public enum FaithgramMessageHistory {
++    public static func store(mediaBox: MediaBox, accountPeerId: PeerId) throws -> FaithgramHistoryStore {
++        let directory = URL(fileURLWithPath: mediaBox.basePath).deletingLastPathComponent().appendingPathComponent("faithgram-history", isDirectory: true)
++        return try FaithgramHistoryStore(directory: directory, encryptionKey: FaithgramVault.accountKey(String(accountPeerId.toInt64())))
++    }
++    private static func revision(_ message: Message) -> FaithgramHistoryRevision {
++        let media = PostboxEncoder()
++        media.encodeObjectArray(message.media, forKey: "media")
++        let attributes = PostboxEncoder()
++        attributes.encodeObjectArray(message.attributes.filter { $0 is TextEntitiesMessageAttribute || $0 is RichTextMessageAttribute }, forKey: "attributes")
++        return FaithgramHistoryRevision(text: message.text, messageDate: message.timestamp, authorId: message.author?.id.toInt64(), media: media.makeData(), attributes: attributes.makeData())
++    }
++    static func capture(_ message: Message, mediaBox: MediaBox, accountPeerId: PeerId, deleted: Bool) {
++        guard message.id.namespace == Namespaces.Message.Cloud, message.id.peerId.namespace != Namespaces.Peer.SecretChat else { return }
++        FaithgramArchivedMedia.capture(message, mediaBox: mediaBox)
++        do {
++            try store(mediaBox: mediaBox, accountPeerId: accountPeerId).capture(peerId: message.id.peerId.toInt64(), namespace: message.id.namespace, messageId: message.id.id, revision: revision(message), deleted: deleted)
++        } catch {
++            FaithgramPreferences.setText("historyError", "Message history could not be saved. Check available storage and device access.")
++        }
++    }
++    static func recordEdit(previous: Message, updated: StoreMessage, mediaBox: MediaBox, accountPeerId: PeerId) {
++        guard PatchClientPolicy.isEnabled(.saveEditHistory), previous.id.namespace == Namespaces.Message.Cloud else { return }
++        let previousEntities = previous.textEntitiesAttribute?.entities ?? []
++        let updatedEntities = (updated.attributes.first { $0 is TextEntitiesMessageAttribute } as? TextEntitiesMessageAttribute)?.entities ?? []
++        let previousRich = PostboxEncoder()
++        previousRich.encodeObjectArray(previous.attributes.filter { $0 is RichTextMessageAttribute }, forKey: "rich")
++        let updatedRich = PostboxEncoder()
++        updatedRich.encodeObjectArray(updated.attributes.filter { $0 is RichTextMessageAttribute }, forKey: "rich")
++        let richChanged = previousRich.makeData() != updatedRich.makeData()
++        guard previous.text != updated.text || previousEntities != updatedEntities || previous.media.map({ $0.id }) != updated.media.map({ $0.id }) || richChanged else { return }
++        capture(previous, mediaBox: mediaBox, accountPeerId: accountPeerId, deleted: false)
++    }
++    static func retainDeleted(_ ids: [MessageId], transaction: Transaction, mediaBox: MediaBox, accountPeerId: PeerId) -> [MessageId] {
++        guard PatchClientPolicy.isEnabled(.saveDeletedMessages) else { return ids }
++        return ids.filter { id in
++            guard id.namespace == Namespaces.Message.Cloud, id.peerId.namespace != Namespaces.Peer.SecretChat, let message = transaction.getMessage(id) else { return true }
++            capture(message, mediaBox: mediaBox, accountPeerId: accountPeerId, deleted: true)
++            transaction.updateMessage(id) { message in
++                var attributes = message.attributes.filter { !($0 is FaithgramDeletedMessageAttribute) }
++                attributes.append(FaithgramDeletedMessageAttribute(date: Int32(clamping: Int(Date().timeIntervalSince1970))))
++                var flags = StoreMessageFlags(message.flags)
++                flags.remove(.CountedAsIncoming)
++                var tags = message.tags
++                tags.remove(.unseenPersonalMessage)
++                return .update(StoreMessage(id: message.id, customStableId: nil, globallyUniqueId: message.globallyUniqueId, groupingKey: message.groupingKey, threadId: message.threadId, timestamp: message.timestamp, flags: flags, tags: tags, globalTags: message.globalTags, localTags: message.localTags, forwardInfo: message.forwardInfo.flatMap(StoreMessageForwardInfo.init), authorId: message.author?.id, text: message.text, attributes: attributes, media: message.media))
++            }
++            return false
++        }
++    }
++}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramPreferences.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramPreferences.swift
+new file mode 100644
+index 0000000..c0f0011
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramPreferences.swift
+@@ -0,0 +1,95 @@
++import Foundation
++
++public enum FaithgramPreferences {
++    public static let changed = Notification.Name("faithgram.preferences.changed")
++    private static let defaults = UserDefaults.standard
++
++    public static func text(_ key: String, fallback: String = "") -> String {
++        return defaults.string(forKey: "faithgram." + key) ?? fallback
++    }
++
++    public static func setText(_ key: String, _ value: String) {
++        if defaults.string(forKey: "faithgram." + key) == value { return }
++        defaults.set(value, forKey: "faithgram." + key)
++        NotificationCenter.default.post(name: changed, object: nil)
++    }
++
++    public static func interfaceText(_ text: String) -> String {
++        return PatchClientPolicy.isEnabled(.lowercaseInterface) ? text.lowercased() : text
++    }
++
++    public static var ghostMode: Bool {
++        let options: [PatchClientOption] = [.blockCloudReads, .alwaysOffline, .blockTyping]
++        return options.allSatisfy(PatchClientPolicy.isEnabled)
++    }
++
++    public static func setGhostMode(_ enabled: Bool) {
++        for option: PatchClientOption in [.blockCloudReads, .alwaysOffline, .blockTyping] {
++            PatchClientPolicy.setEnabled(option, enabled)
++        }
++    }
++
++    public static var deletedMark: String { return text("deletedMark", fallback: "🧹") }
++    public static var editedMark: String { return text("editedMark", fallback: "🧹") }
++
++    public static var mediaRules: [String: Bool] {
++        guard let data = defaults.data(forKey: "faithgram.mediaRules") else { return [:] }
++        return (try? JSONDecoder().decode([String: Bool].self, from: data)) ?? [:]
++    }
++    public static func setMediaRules(_ rules: [String: Bool]) {
++        if let data = try? JSONEncoder().encode(rules) {
++            defaults.set(data, forKey: "faithgram.mediaRules")
++            NotificationCenter.default.post(name: changed, object: nil)
++        }
++    }
++    public static func setMediaRule(peerId: Int64, save: Bool) {
++        var rules = mediaRules
++        rules[String(peerId)] = save
++        setMediaRules(rules)
++    }
++
++    public enum Badge: String, Codable, CaseIterable {
++        case developer
++        case betaTester
++        case verified
++
++        public var fileId: Int64? {
++            switch self {
++            case .developer: return 5988023995125993550
++            case .verified: return 5951665890079544884
++            case .betaTester: return nil
++            }
++        }
++
++        public var title: String {
++            switch self {
++            case .developer: return "developer"
++            case .betaTester: return "beta tester"
++            case .verified: return "verified user"
++            }
++        }
++    }
++
++    public static let badgeOwnerId: Int64 = 1000
++
++    public static var badgeGrants: [String: Badge] {
++        guard let data = defaults.data(forKey: "faithgram.badgeGrants"),
++              let grants = try? JSONDecoder().decode([String: Badge].self, from: data) else {
++            return [String(badgeOwnerId): .developer]
++        }
++        return grants
++    }
++
++    public static func badge(for peerId: Int64) -> Badge? {
++        return badgeGrants[String(peerId)]
++    }
++
++    public static func setBadge(_ badge: Badge?, peerId: Int64) {
++        var grants = badgeGrants
++        grants[String(peerId)] = badge
++        if let data = try? JSONEncoder().encode(grants) {
++            defaults.set(data, forKey: "faithgram.badgeGrants")
++            NotificationCenter.default.post(name: changed, object: nil)
++        }
++    }
++}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramRichTranslation.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramRichTranslation.swift
+new file mode 100644
+index 0000000..04dbca4
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramRichTranslation.swift
+@@ -0,0 +1,114 @@
++import Foundation
++import Postbox
++import SwiftSignalKit
++
++private func mapFaithgramRichText(_ text: RichText, transform: (String) -> String) -> RichText {
++    func map(_ text: RichText) -> RichText { mapFaithgramRichText(text, transform: transform) }
++    switch text {
++    case let .plain(value): return .plain(transform(value))
++    case let .bold(value): return .bold(map(value))
++    case let .italic(value): return .italic(map(value))
++    case let .underline(value): return .underline(map(value))
++    case let .strikethrough(value): return .strikethrough(map(value))
++    case let .url(text, url, id): return .url(text: map(text), url: url, webpageId: id)
++    case let .concat(values): return .concat(values.map(map))
++    case let .subscript(value): return .subscript(map(value))
++    case let .superscript(value): return .superscript(map(value))
++    case let .marked(value): return .marked(map(value))
++    case let .anchor(value, name): return .anchor(text: map(value), name: name)
++    case let .textSpoiler(value): return .textSpoiler(text: map(value))
++    default: return text // Preserve code, formulas, usernames, URLs and structured identifiers.
++    }
++}
++
++private func mapFaithgramBlocks(_ blocks: [InstantPageBlock], transform: (String) -> String) -> [InstantPageBlock] {
++    func text(_ value: RichText) -> RichText { mapFaithgramRichText(value, transform: transform) }
++    func children(_ value: [InstantPageBlock]) -> [InstantPageBlock] { mapFaithgramBlocks(value, transform: transform) }
++    func caption(_ value: InstantPageCaption) -> InstantPageCaption { InstantPageCaption(text: text(value.text), credit: value.credit) }
++    return blocks.map { block in
++        switch block {
++        case let .title(value): return .title(text(value))
++        case let .subtitle(value): return .subtitle(text(value))
++        case let .header(value): return .header(text(value))
++        case let .subheader(value): return .subheader(text(value))
++        case let .heading(value, level): return .heading(text: text(value), level: level)
++        case let .paragraph(value): return .paragraph(text(value))
++        case let .footer(value): return .footer(text(value))
++        case let .kicker(value): return .kicker(text(value))
++        case let .thinking(value): return .thinking(text(value))
++        case let .list(items, ordered):
++            return .list(items: items.map { item in
++                switch item {
++                case let .text(value, number, checked): return .text(text(value), number, checked)
++                case let .blocks(value, number, checked): return .blocks(children(value), number, checked)
++                case .unknown: return .unknown
++                }
++            }, ordered: ordered)
++        case let .blockQuote(blocks, value, collapsed): return .blockQuote(blocks: children(blocks), caption: text(value), collapsed: collapsed)
++        case let .pullQuote(value, label): return .pullQuote(text: text(value), caption: text(label))
++        case let .image(id, value, url, page, spoiler): return .image(id: id, caption: caption(value), url: url, webpageId: page, spoiler: spoiler)
++        case let .video(id, value, autoplay, loop, spoiler): return .video(id: id, caption: caption(value), autoplay: autoplay, loop: loop, spoiler: spoiler)
++        case let .audio(id, value): return .audio(id: id, caption: caption(value))
++        case let .cover(value): return .cover(children([value])[0])
++        case let .webEmbed(url, html, size, value, stretch, scrolling, cover): return .webEmbed(url: url, html: html, dimensions: size, caption: caption(value), stretchToWidth: stretch, allowScrolling: scrolling, coverId: cover)
++        case let .postEmbed(url, page, avatar, author, date, blocks, value): return .postEmbed(url: url, webpageId: page, avatarId: avatar, author: author, date: date, blocks: children(blocks), caption: caption(value))
++        case let .collage(items, value): return .collage(items: children(items), caption: caption(value))
++        case let .slideshow(items, value): return .slideshow(items: children(items), caption: caption(value))
++        case let .table(title, rows, bordered, striped):
++            return .table(title: text(title), rows: rows.map { row in
++                InstantPageTableRow(cells: row.cells.map { cell in
++                    InstantPageTableCell(text: cell.text.map(text), header: cell.header, alignment: cell.alignment, verticalAlignment: cell.verticalAlignment, colspan: cell.colspan, rowspan: cell.rowspan)
++                })
++            }, bordered: bordered, striped: striped)
++        case let .details(title, blocks, expanded): return .details(title: text(title), blocks: children(blocks), expanded: expanded)
++        case let .relatedArticles(title, articles): return .relatedArticles(title: text(title), articles: articles)
++        case let .map(latitude, longitude, zoom, dimensions, value): return .map(latitude: latitude, longitude: longitude, zoom: zoom, dimensions: dimensions, caption: caption(value))
++        default: return block
++        }
++    }
++}
++
++func faithgramTranslateRichMessages(account: Account, messageIds: [EngineMessage.Id], toLang: String) -> Signal<[EngineMessage.Id: InstantPage], TranslationError> {
++    guard let service = engineExperimentalInternalTranslationService else { return .fail(.generic) }
++    return account.postbox.transaction { transaction -> [(EngineMessage.Id, InstantPage)] in
++        return messageIds.compactMap { id in transaction.getMessage(id)?.richText.map { (id, $0.instantPage) } }
++    } |> castError(TranslationError.self)
++    |> mapToSignal { pages -> Signal<[(EngineMessage.Id, InstantPage)], TranslationError> in
++        let signals: [Signal<(EngineMessage.Id, InstantPage), TranslationError>] = pages.map { id, page in
++            var texts: [AnyHashable: String] = [:]
++            var index = 0
++            let _ = mapFaithgramBlocks(page.blocks) { value in
++                defer { index += 1 }
++                texts[AnyHashable(index)] = value
++                return value
++            }
++            if texts.isEmpty { return .single((id, page)) }
++            return service.translate(texts: texts, fromLang: "auto", toLang: toLang)
++            |> castError(TranslationError.self)
++            |> mapToSignal { result -> Signal<(EngineMessage.Id, InstantPage), TranslationError> in
++                guard let result else { return .fail(.generic) }
++                var index = 0
++                let blocks = mapFaithgramBlocks(page.blocks) { value in
++                    defer { index += 1 }
++                    return result[AnyHashable(index)] ?? value
++                }
++                return .single((id, InstantPage(blocks: blocks, media: page.media, isComplete: page.isComplete, rtl: ["ar", "fa", "he", "ur"].contains(toLang), url: page.url, views: page.views)))
++            }
++        }
++        return combineLatest(signals)
++    }
++    |> mapToSignal { pages -> Signal<[EngineMessage.Id: InstantPage], TranslationError> in
++        return account.postbox.transaction { transaction in
++            var result: [EngineMessage.Id: InstantPage] = [:]
++            for (id, page) in pages {
++                result[id] = page
++                transaction.updateMessage(id) { message in
++                    var attributes = message.attributes.filter { !($0 is TranslationMessageAttribute) }
++                    attributes.append(TranslationMessageAttribute(text: "", entities: [], toLang: toLang, instantPage: page))
++                    return .update(StoreMessage(id: message.id, customStableId: nil, globallyUniqueId: message.globallyUniqueId, groupingKey: message.groupingKey, threadId: message.threadId, timestamp: message.timestamp, flags: StoreMessageFlags(message.flags), tags: message.tags, globalTags: message.globalTags, localTags: message.localTags, forwardInfo: message.forwardInfo.flatMap(StoreMessageForwardInfo.init), authorId: message.author?.id, text: message.text, attributes: attributes, media: message.media))
++                }
++            }
++            return result
++        } |> castError(TranslationError.self)
++    }
++}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramSessionBackup.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramSessionBackup.swift
+new file mode 100644
+index 0000000..b28246c
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramSessionBackup.swift
+@@ -0,0 +1,40 @@
++import Foundation
++
++public struct FaithgramSavedSession: Codable {
++    public let testingEnvironment: Bool
++    public let data: AccountBackupData
++    public init(testingEnvironment: Bool, data: AccountBackupData) {
++        self.testingEnvironment = testingEnvironment
++        self.data = data
++    }
++}
++
++public struct FaithgramSessionBackup: Codable {
++    public let version: Int
++    public let createdAt: Date
++    public let sessions: [FaithgramSavedSession]
++    public init(sessions: [FaithgramSavedSession]) {
++        self.version = 1
++        self.createdAt = Date()
++        self.sessions = sessions
++    }
++    public func validate() throws {
++        guard version == 1, !sessions.isEmpty else { throw FaithgramVaultError.invalidFile }
++        for session in sessions {
++            let value = session.data
++            guard value.peerId > 0, (1 ... 10).contains(value.masterDatacenterId), value.masterDatacenterKey.count == 256, value.masterDatacenterKeyId != 0, value.additionalDatacenterKeys.count <= 10 else { throw FaithgramVaultError.invalidFile }
++            for (id, key) in value.additionalDatacenterKeys {
++                guard (1 ... 10).contains(id), id == key.id, key.key.count == 256, key.keyId != 0 else { throw FaithgramVaultError.invalidFile }
++            }
++        }
++    }
++    public func encrypted(password: String) throws -> Data {
++        try validate()
++        return try FaithgramVault.encryptBackup(JSONEncoder().encode(self), password: password)
++    }
++    public static func decrypt(_ data: Data, password: String) throws -> FaithgramSessionBackup {
++        let backup = try JSONDecoder().decode(Self.self, from: FaithgramVault.decryptBackup(data, password: password))
++        try backup.validate()
++        return backup
++    }
++}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramVault.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramVault.swift
+new file mode 100644
+index 0000000..b373e2f
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramVault.swift
+@@ -0,0 +1,91 @@
++import Foundation
++import CryptoKit
++import Security
++import CommonCrypto
++
++public enum FaithgramVaultError: Error {
++    case invalidFile, invalidPassword, keyUnavailable, invalidKey
++}
++
++public enum FaithgramVault {
++    private struct Envelope: Codable {
++        let format: String
++        let version: Int
++        let salt: Data
++        let rounds: UInt32
++        let sealed: Data
++    }
++    private static let rounds: UInt32 = 600_000
++
++    public static func accountKey(_ account: String) throws -> Data {
++        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
++            kSecAttrService as String: "faithgram.history", kSecAttrAccount as String: account,
++            kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
++        var result: CFTypeRef?
++        let status = SecItemCopyMatching(query as CFDictionary, &result)
++        if status == errSecSuccess, let data = result as? Data, data.count == 32 { return data }
++        guard status == errSecItemNotFound else { throw FaithgramVaultError.keyUnavailable }
++        let key = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
++        var insert = query
++        insert.removeValue(forKey: kSecReturnData as String)
++        insert.removeValue(forKey: kSecMatchLimit as String)
++        insert[kSecValueData as String] = key
++        insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
++        let added = SecItemAdd(insert as CFDictionary, nil)
++        if added == errSecDuplicateItem { return try accountKey(account) }
++        guard added == errSecSuccess else { throw FaithgramVaultError.keyUnavailable }
++        return key
++    }
++
++    public static func seal(_ data: Data, key: Data, context: String) throws -> Data {
++        guard key.count == 32 else { throw FaithgramVaultError.invalidKey }
++        guard let sealed = try AES.GCM.seal(data, using: SymmetricKey(data: key), authenticating: Data(context.utf8)).combined else { throw FaithgramVaultError.invalidFile }
++        return sealed
++    }
++    public static func open(_ data: Data, key: Data, context: String) throws -> Data {
++        guard key.count == 32 else { throw FaithgramVaultError.invalidKey }
++        return try AES.GCM.open(AES.GCM.SealedBox(combined: data), using: SymmetricKey(data: key), authenticating: Data(context.utf8))
++    }
++
++    private static func passwordKey(_ password: String, salt: Data) throws -> Data {
++        let password = Array(password.precomposedStringWithCanonicalMapping.utf8)
++        guard password.count >= 12, password.count <= 1024, salt.count == 32 else { throw FaithgramVaultError.invalidPassword }
++        var derived = [UInt8](repeating: 0, count: 32)
++        defer { _ = derived.withUnsafeMutableBytes { $0.initializeMemory(as: UInt8.self, repeating: 0) } }
++        let status = password.withUnsafeBytes { passwordBytes in
++            salt.withUnsafeBytes { saltBytes in
++                CCKeyDerivationPBKDF(CCPBKDFAlgorithm(kCCPBKDF2), passwordBytes.baseAddress!.assumingMemoryBound(to: Int8.self), password.count, saltBytes.baseAddress!.assumingMemoryBound(to: UInt8.self), salt.count, CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256), rounds, &derived, 32)
++            }
++        }
++        guard status == kCCSuccess else { throw FaithgramVaultError.invalidKey }
++        return Data(derived)
++    }
++    public static func encryptBackup(_ data: Data, password: String) throws -> Data {
++        guard data.count <= 10 * 1024 * 1024 else { throw FaithgramVaultError.invalidFile }
++        let salt = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
++        let key = try passwordKey(password, salt: salt)
++        let sealed = try seal(data, key: key, context: "faithgram.sessions.v1")
++        return try JSONEncoder().encode(Envelope(format: "faithgram.sessions", version: 1, salt: salt, rounds: rounds, sealed: sealed))
++    }
++    public static func decryptBackup(_ data: Data, password: String) throws -> Data {
++        guard data.count <= 16 * 1024 * 1024 else { throw FaithgramVaultError.invalidFile }
++        let file = try JSONDecoder().decode(Envelope.self, from: data)
++        guard file.format == "faithgram.sessions", file.version == 1, file.rounds == rounds, file.salt.count == 32 else { throw FaithgramVaultError.invalidFile }
++        return try open(file.sealed, key: passwordKey(password, salt: file.salt), context: "faithgram.sessions.v1")
++    }
++
++    public static func write(_ data: Data, to url: URL) throws {
++        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
++        #if os(iOS)
++        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: url.deletingLastPathComponent().path)
++        #endif
++        try data.write(to: url, options: .atomic)
++        #if os(iOS)
++        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: url.path)
++        #endif
++        var target = url
++        var values = URLResourceValues()
++        values.isExcludedFromBackup = true
++        try target.setResourceValues(values)
++    }
++}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/PatchClientPolicy.swift b/submodules/TelegramCore/Sources/PatchClient/PatchClientPolicy.swift
 new file mode 100644
-index 0000000..dd40eb8
+index 0000000..1dfd73a
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/PatchClient/PatchClientPolicy.swift
-@@ -0,0 +1,99 @@
+@@ -0,0 +1,177 @@
 +import Foundation
 +import TelegramApi
 +
@@ -224,16 +1952,52 @@ index 0000000..dd40eb8
 +    case noPhoneException
 +    case hideAds
 +    case hideProxyPromo
++    case lowercaseInterface
++    case unlimitedAccounts
++    case hideStories
++    case disableStoryCamera
++    case hidePinnedNotifications
++    case hideMentionNotifications
++    case localTranscription
++    case saveDeletedMessages
++    case saveEditHistory
++    case localPremium
++    case rememberFolder
++    case hideAllChats
++    case foldersAtBottom
++    case regexFilters
++    case formattingPanel
++    case localTranslation
++    case dynamicIsland
++    case archiveDownloadedMedia
 +
 +    public var title: String {
 +        switch self {
 +        case .alwaysOffline: return "Stay offline"
 +        case .blockTyping: return "Hide typing activity"
-+        case .blockCloudReads: return "Disable cloud read receipts"
++        case .blockCloudReads: return "Disable read receipts"
 +        case .localDrafts: return "Keep drafts on this device"
 +        case .noPhoneException: return "Keep phone privacy when adding contacts"
 +        case .hideAds: return "Hide channel ads"
 +        case .hideProxyPromo: return "Hide proxy promotions"
++        case .lowercaseInterface: return "Lowercase interface"
++        case .unlimitedAccounts: return "Unlimited accounts"
++        case .hideStories: return "Hide stories"
++        case .disableStoryCamera: return "Disable swipe to record"
++        case .hidePinnedNotifications: return "Silence pinned messages"
++        case .hideMentionNotifications: return "Silence mentions"
++        case .localTranscription: return "On-device voice to text"
++        case .saveDeletedMessages: return "Save deleted messages"
++        case .saveEditHistory: return "Save edit history"
++        case .localPremium: return "Local premium appearance"
++        case .rememberFolder: return "Remember the last folder"
++        case .hideAllChats: return "Hide All Chats"
++        case .foldersAtBottom: return "Folders at the bottom"
++        case .regexFilters: return "Message filters"
++        case .formattingPanel: return "Formatting panel"
++        case .archiveDownloadedMedia: return "Archive downloaded media"
++        case .dynamicIsland: return "Faithgram Live Activity"
++        case .localTranslation: return "On-device translation"
 +        }
 +    }
 +
@@ -244,7 +2008,7 @@ index 0000000..dd40eb8
 +        case .blockTyping:
 +            return "Suppresses typing, recording and media upload indicators."
 +        case .blockCloudReads:
-+            return "Messages may remain unread on other devices. Secret chats use standard read receipts."
++            return "Suppress cloud and secret-chat read receipts. Messages may remain unread on other devices."
 +        case .localDrafts:
 +            return "Keeps new drafts on this device. Existing server drafts are not deleted."
 +        case .noPhoneException:
@@ -253,6 +2017,42 @@ index 0000000..dd40eb8
 +            return "Skips sponsored messages in channels."
 +        case .hideProxyPromo:
 +            return "Skips the proxy operator's promoted channel."
++        case .lowercaseInterface:
++            return "Use lowercase interface labels. Messages and names keep their original case."
++        case .unlimitedAccounts:
++            return "Remove the local account-count limit. Telegram may still limit sign-in attempts."
++        case .hideStories:
++            return "Hide the stories strip in the chat list."
++        case .disableStoryCamera:
++            return "Disable the story camera swipe gesture."
++        case .hidePinnedNotifications:
++            return "Suppress notifications for pinned-message service events."
++        case .hideMentionNotifications:
++            return "Suppress notifications for messages that mention you."
++        case .localTranscription:
++            return "Use speech recognition on this device when the language is supported."
++        case .saveDeletedMessages:
++            return "Keep a local archive of received cloud messages removed by server updates."
++        case .saveEditHistory:
++            return "Keep the previous versions of received cloud messages on this device."
++        case .localPremium:
++            return "Show a premium star for your profile locally. Server subscriptions stay unchanged."
++        case .rememberFolder:
++            return "Open the last selected chat folder on the next launch."
++        case .hideAllChats:
++            return "Hide the All Chats tab when other folders are available."
++        case .foldersAtBottom:
++            return "Place the folder tab bar near the bottom of the chat list."
++        case .regexFilters:
++            return "Hide matching messages using local regular expressions. Turn the filter off to view them again."
++        case .formattingPanel:
++            return "Keep bold, italic and link controls close to the message composer."
++        case .archiveDownloadedMedia:
++            return "Keep downloaded media with deleted messages and past edits, up to 256 MB per file. Per-chat rules are available in the message menu."
++        case .dynamicIsland:
++            return "Show the app icon in Dynamic Island and on the Lock Screen. iOS controls visibility and duration."
++        case .localTranslation:
++            return "Translate supported languages on this device using installed language models."
 +        }
 +    }
 +}
@@ -267,7 +2067,9 @@ index 0000000..dd40eb8
 +    }
 +
 +    public static func setEnabled(_ option: PatchClientOption, _ value: Bool) {
++        if isEnabled(option) == value { return }
 +        UserDefaults.standard.set(value, forKey: prefix + option.rawValue)
++        NotificationCenter.default.post(name: Notification.Name("faithgram.preferences.changed"), object: nil)
 +    }
 +
 +    /// Completion consumes the local operation without inventing server PTS
@@ -279,8 +2081,12 @@ index 0000000..dd40eb8
 +        case "messages.readHistory", "channels.readHistory",
 +             "messages.readMessageContents", "channels.readMessageContents",
 +             "messages.readDiscussion", "messages.readMentions",
-+             "messages.readReactions", "messages.readPollVotes":
++             "messages.readReactions", "messages.readPollVotes", "messages.readEncryptedHistory":
 +            return isEnabled(.blockCloudReads)
++        case "messages.translateText", "messages.translateRichMessage", "messages.composeMessageWithAI", "messages.composeRichMessageWithAI":
++            return isEnabled(.localTranslation)
++        case "messages.transcribeAudio":
++            return isEnabled(.localTranscription)
 +        case "messages.saveDraft":
 +            return isEnabled(.localDrafts)
 +        default:
@@ -351,7 +2157,7 @@ index 0000000..0068029
 +    }
 +}
 diff --git a/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift b/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift
-index 58db6c7..832df4c 100644
+index 58db6c7..327738f 100644
 --- a/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift
 +++ b/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift
 @@ -1736,6 +1736,9 @@ private func finalStateWithUpdatesAndServerTime(accountPeerId: PeerId, postbox:
@@ -364,6 +2170,83 @@ index 58db6c7..832df4c 100644
                  let (peer, topMsgId, savedPeerId, draft) = (updateDraftMessageData.peer, updateDraftMessageData.topMsgId, updateDraftMessageData.savedPeerId, updateDraftMessageData.draft)
                  let inputState = _internal_synchronizeableChatInputState(accountPeerId: accountPeerId, peerId: peer.peerId, apiDraft: draft)
                  var threadId: Int64?
+@@ -4440,6 +4443,10 @@ func replayFinalState(
+                     }
+                 }
+             case let .DeleteMessagesWithGlobalIds(ids):
++                let mappedIds = transaction.messageIdsForGlobalIds(ids)
++                let remaining = Set(FaithgramMessageHistory.retainDeleted(mappedIds, transaction: transaction, mediaBox: mediaBox, accountPeerId: accountPeerId))
++                let retainedGlobalIds = Set(mappedIds.filter { !remaining.contains($0) }.map { $0.id })
++                let ids = ids.filter { !retainedGlobalIds.contains($0) }
+                 var resourceIds: [MediaResourceId] = []
+                 transaction.deleteMessagesWithGlobalIds(ids, forEachMedia: { media in
+                     addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+@@ -4449,6 +4456,7 @@ func replayFinalState(
+                 }
+                 deletedMessageIds.append(contentsOf: ids.map { .global($0) })
+             case let .DeleteMessages(ids):
++                let ids = FaithgramMessageHistory.retainDeleted(ids, transaction: transaction, mediaBox: mediaBox, accountPeerId: accountPeerId)
+                 _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in
+                     addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
+                 })
+@@ -4458,9 +4466,19 @@ func replayFinalState(
+                     updatePeerChatInclusionWithMinTimestamp(transaction: transaction, id: id.peerId, minTimestamp: message.timestamp, forceRootGroupIfNotExists: false)
+                 }
+                 var resourceIds: [MediaResourceId] = []
++                if PatchClientPolicy.isEnabled(.saveDeletedMessages) {
++                    var ids: [MessageId] = []
++                    transaction.withAllMessages(peerId: id.peerId, namespace: id.namespace) { message in
++                        if message.id.id <= id.id { ids.append(message.id) }
++                        return true
++                    }
++                    let remaining = FaithgramMessageHistory.retainDeleted(ids, transaction: transaction, mediaBox: mediaBox, accountPeerId: accountPeerId)
++                    transaction.deleteMessages(remaining, forEachMedia: { media in addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds) })
++                } else {
+                 transaction.deleteMessagesInRange(peerId: id.peerId, namespace: id.namespace, minId: 1, maxId: id.id, forEachMedia: { media in
+                     addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+                 })
++                }
+                 if !resourceIds.isEmpty {
+                     let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
+                 }
+@@ -4488,9 +4506,11 @@ func replayFinalState(
+             case let .EditMessage(id, message):
+                 var generatedEvent: (reactionAuthor: Peer, reaction: MessageReaction.Reaction, message: Message, timestamp: Int32)?
+                 transaction.updateMessage(id, update: { previousMessage in
++                    FaithgramMessageHistory.recordEdit(previous: previousMessage, updated: message, mediaBox: mediaBox, accountPeerId: accountPeerId)
+                     var updatedFlags = message.flags
+                     var updatedLocalTags = message.localTags
+                     var updatedAttributes = message.attributes
++                    if let deleted = previousMessage.attributes.first(where: { $0 is FaithgramDeletedMessageAttribute }) { updatedAttributes.append(deleted) }
+                     if previousMessage.localTags.contains(.OutgoingLiveLocation) {
+                         updatedLocalTags.insert(.OutgoingLiveLocation)
+                     }
+diff --git a/submodules/TelegramCore/Sources/State/AccountStateManager.swift b/submodules/TelegramCore/Sources/State/AccountStateManager.swift
+index d4c9113..8bc90ee 100644
+--- a/submodules/TelegramCore/Sources/State/AccountStateManager.swift
++++ b/submodules/TelegramCore/Sources/State/AccountStateManager.swift
+@@ -1243,7 +1243,20 @@ public final class AccountStateManager {
+                 let _ = (signal
+                 |> deliverOn(self.queue)).start(next: { [weak self] messages in
+                     if let strongSelf = self {
+-                        strongSelf.notificationMessagesPipe.putNext(messages)
++                        let filtered = messages.compactMap { batch -> ([Message], PeerGroupId, Bool, MessageHistoryThreadData?)? in
++                            let visible = batch.0.filter { message in
++                                if FaithgramMessageFilter.matches(message.text) { return false }
++                                if PatchClientPolicy.isEnabled(.hideMentionNotifications), message.tags.contains(.unseenPersonalMessage) { return false }
++                                if PatchClientPolicy.isEnabled(.hidePinnedNotifications), message.media.contains(where: { media in
++                                    guard let action = media as? TelegramMediaAction else { return false }
++                                    if case .pinnedMessageUpdated = action.action { return true }
++                                    return false
++                                }) { return false }
++                                return true
++                            }
++                            return visible.isEmpty ? nil : (visible, batch.1, batch.2, batch.3)
++                        }
++                        strongSelf.notificationMessagesPipe.putNext(filtered)
+                     }
+                 }, completed: {
+                     completed()
 diff --git a/submodules/TelegramCore/Sources/State/RestoreFetchedDrafts.swift b/submodules/TelegramCore/Sources/State/RestoreFetchedDrafts.swift
 index 66ee81f..7ef94e9 100644
 --- a/submodules/TelegramCore/Sources/State/RestoreFetchedDrafts.swift
@@ -378,6 +2261,648 @@ index 66ee81f..7ef94e9 100644
          guard let parsed = _internal_synchronizeableChatInputState(accountPeerId: accountPeerId, peerId: peerId, apiDraft: apiDraft) else {
              continue
          }
+diff --git a/submodules/TelegramCore/Sources/SyncCore/SyncCore_AccountBackupDataAttribute.swift b/submodules/TelegramCore/Sources/SyncCore/SyncCore_AccountBackupDataAttribute.swift
+index e28427f..c06d7e4 100644
+--- a/submodules/TelegramCore/Sources/SyncCore/SyncCore_AccountBackupDataAttribute.swift
++++ b/submodules/TelegramCore/Sources/SyncCore/SyncCore_AccountBackupDataAttribute.swift
+@@ -1,5 +1,4 @@
+ import Foundation
+-import Postbox
+ 
+ public struct AccountBackupData: Codable, Equatable {
+     private enum CodingKeys: String, CodingKey {
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Messages/MarkMessageContentAsConsumedInteractively.swift b/submodules/TelegramCore/Sources/TelegramEngine/Messages/MarkMessageContentAsConsumedInteractively.swift
+index 43408c1..9244a18 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Messages/MarkMessageContentAsConsumedInteractively.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Messages/MarkMessageContentAsConsumedInteractively.swift
+@@ -16,7 +16,7 @@ func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messa
+                         updateMessage = true
+                         
+                         if message.id.peerId.namespace == Namespaces.Peer.SecretChat {
+-                            if let state = transaction.getPeerChatState(message.id.peerId) as? SecretChatState {
++                            if !PatchClientPolicy.isEnabled(.blockCloudReads), let state = transaction.getPeerChatState(message.id.peerId) as? SecretChatState {
+                                 var layer: SecretChatLayer?
+                                 switch state.embeddedState {
+                                     case .terminated, .handshake:
+@@ -72,7 +72,7 @@ func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messa
+                                 }
+                             }
+                             
+-                            if let state = state, let layer = layer, let globallyUniqueId = message.globallyUniqueId {
++                            if !PatchClientPolicy.isEnabled(.blockCloudReads), let state = state, let layer = layer, let globallyUniqueId = message.globallyUniqueId {
+                                 let updatedState = addSecretChatOutgoingOperation(transaction: transaction, peerId: messageId.peerId, operation: .readMessagesContent(layer: layer, actionGloballyUniqueId: Int64.random(in: Int64.min ... Int64.max), globallyUniqueIds: [globallyUniqueId]), state: state)
+                                 if updatedState != state {
+                                     transaction.setPeerChatState(messageId.peerId, state: updatedState)
+@@ -103,7 +103,7 @@ func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messa
+                                 }
+                             }
+                             
+-                            if let state = state, let layer = layer, let globallyUniqueId = message.globallyUniqueId {
++                            if !PatchClientPolicy.isEnabled(.blockCloudReads), let state = state, let layer = layer, let globallyUniqueId = message.globallyUniqueId {
+                                 let updatedState = addSecretChatOutgoingOperation(transaction: transaction, peerId: messageId.peerId, operation: .readMessagesContent(layer: layer, actionGloballyUniqueId: Int64.random(in: Int64.min ... Int64.max), globallyUniqueIds: [globallyUniqueId]), state: state)
+                                 if updatedState != state {
+                                     transaction.setPeerChatState(messageId.peerId, state: updatedState)
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Messages/Translate.swift b/submodules/TelegramCore/Sources/TelegramEngine/Messages/Translate.swift
+index d53a1f4..2187853 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Messages/Translate.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Messages/Translate.swift
+@@ -29,7 +29,25 @@ public enum TranslationTone: String {
+     case formal
+ }
+ 
++private func faithgramTranslateOnDevice(texts: [(String, [MessageTextEntity])], toLang: String) -> Signal<[(String, [MessageTextEntity])], TranslationError> {
++    guard let service = engineExperimentalInternalTranslationService else { return .fail(.generic) }
++    if texts.isEmpty { return .single([]) }
++    let signals: [Signal<(String, [MessageTextEntity]), TranslationError>] = texts.map { text, _ in
++        if text.isEmpty { return .single((text, [])) }
++        return service.translate(texts: [AnyHashable(0): text], fromLang: "auto", toLang: toLang)
++        |> castError(TranslationError.self)
++        |> mapToSignal { result -> Signal<(String, [MessageTextEntity]), TranslationError> in
++            guard let translated = result?[AnyHashable(0)] else { return .fail(.generic) }
++            return .single((translated, []))
++        }
++    }
++    return combineLatest(signals)
++}
++
+ func _internal_translate(network: Network, text: String, toLang: String, entities: [MessageTextEntity] = [], tone: TranslationTone = .neutral, peer: Api.InputPeer? = nil, messageId: Int32? = nil) -> Signal<(String, [MessageTextEntity])?, TranslationError> {
++    if PatchClientPolicy.isEnabled(.localTranslation) {
++        return faithgramTranslateOnDevice(texts: [(text, entities)], toLang: toLang) |> map { $0.first }
++    }
+     var flags: Int32 = 0
+ 
+     if tone != .neutral {
+@@ -172,6 +190,7 @@ func _internal_composeRichMessageWithAI(account: Account, instantPage: InstantPa
+ }
+ 
+ func _internal_translateTexts(network: Network, texts: [(String, [MessageTextEntity])], toLang: String, tone: TranslationTone = .neutral) -> Signal<[(String, [MessageTextEntity])], TranslationError> {
++    if PatchClientPolicy.isEnabled(.localTranslation) { return faithgramTranslateOnDevice(texts: texts, toLang: toLang) }
+     var flags: Int32 = 0
+     flags |= (1 << 1)
+     
+@@ -235,6 +254,7 @@ public var engineExperimentalInternalTranslationService: ExperimentalInternalTra
+ /// `messages.translateRichMessage`, stores each result as a `TranslationMessageAttribute` with the
+ /// translated `InstantPage`, and returns the pages keyed by message id.
+ func _internal_translateRichMessages(account: Account, inputPeer: Api.InputPeer, messageIds: [EngineMessage.Id], toLang: String, tone: TranslationTone = .neutral) -> Signal<[EngineMessage.Id: InstantPage], TranslationError> {
++    if PatchClientPolicy.isEnabled(.localTranslation) { return faithgramTranslateRichMessages(account: account, messageIds: messageIds, toLang: toLang) }
+     var flags: Int32 = 0
+     flags |= (1 << 0)
+     if tone != .neutral {
+@@ -286,8 +306,8 @@ private func _internal_translateMessagesByPeerId(account: Account, peerId: Engin
+     }
+     |> castError(TranslationError.self)
+     |> mapToSignal { (inputPeer, messages) -> Signal<Void, TranslationError> in
+-        guard let inputPeer = inputPeer else {
+-            return .never()
++        guard let inputPeer = inputPeer ?? (PatchClientPolicy.isEnabled(.localTranslation) ? Api.InputPeer.inputPeerSelf : nil) else {
++            return .fail(.invalidMessageId)
+         }
+         
+         let polls = messages.compactMap { message in
+@@ -329,7 +349,7 @@ private func _internal_translateMessagesByPeerId(account: Account, peerId: Engin
+         // Rich messages (a `RichTextMessageAttribute`) translate through `messages.translateRichMessage`
+         // (per the layer-228 contract: pick translateText vs translateRichMessage by message type).
+         let richMessageIds = messages.filter { $0.attributes.contains(where: { $0 is RichTextMessageAttribute }) }.map { $0.id }
+-        let plainMessageIds = messageIds.filter { !richMessageIds.contains($0) }
++        let plainMessageIds = PatchClientPolicy.isEnabled(.localTranslation) ? messages.filter { !$0.text.isEmpty && !richMessageIds.contains($0.id) }.map { $0.id } : messageIds.filter { !richMessageIds.contains($0) }
+ 
+         let richSignal: Signal<Void, TranslationError>
+         if richMessageIds.isEmpty {
+@@ -345,7 +365,8 @@ private func _internal_translateMessagesByPeerId(account: Account, peerId: Engin
+         if id.isEmpty {
+             msgs = .single(nil)
+         } else {
+-            if enableLocalIfPossible, let engineExperimentalInternalTranslationService, let fromLang {
++            if (enableLocalIfPossible || PatchClientPolicy.isEnabled(.localTranslation)), let engineExperimentalInternalTranslationService {
++                let fromLang = fromLang ?? "auto"
+                 msgs = account.postbox.transaction { transaction -> [MessageId: String] in
+                     var texts: [MessageId: String] = [:]
+                     for messageId in plainMessageIds {
+@@ -381,6 +402,7 @@ private func _internal_translateMessagesByPeerId(account: Account, peerId: Engin
+                     }
+                 }
+             } else {
++                if PatchClientPolicy.isEnabled(.localTranslation) { return .fail(.generic) }
+                 msgs = account.network.request(Api.functions.messages.translateText(flags: flags, peer: inputPeer, id: id, text: nil, toLang: toLang, tone: tone != .neutral ? tone.rawValue : nil))
+                 |> map(Optional.init)
+                 |> mapError { error -> TranslationError in
+@@ -515,8 +537,8 @@ func _internal_togglePeerMessagesTranslationHidden(account: Account, peerId: Eng
+         return transaction.getPeer(peerId).flatMap(apiInputPeer)
+     }
+     |> mapToSignal { inputPeer -> Signal<Never, NoError> in
+-        guard let inputPeer = inputPeer else {
+-            return .never()
++        guard let inputPeer = inputPeer ?? (PatchClientPolicy.isEnabled(.localTranslation) ? Api.InputPeer.inputPeerSelf : nil) else {
++            return .fail(.invalidMessageId)
+         }
+         var flags: Int32 = 0
+         if hidden {
+diff --git a/submodules/TelegramPresentationData/Sources/PresentationData.swift b/submodules/TelegramPresentationData/Sources/PresentationData.swift
+index f557750..2144d7c 100644
+--- a/submodules/TelegramPresentationData/Sources/PresentationData.swift
++++ b/submodules/TelegramPresentationData/Sources/PresentationData.swift
+@@ -722,9 +722,19 @@ public func chatServiceBackgroundColor(wallpaper: TelegramWallpaper, mediaBox: M
+     }
+ }
+ 
++private func faithgramPresentationChanges() -> Signal<Int, NoError> {
++    return Signal { subscriber in
++        subscriber.putNext(0)
++        let observer = NotificationCenter.default.addObserver(forName: FaithgramPreferences.changed, object: nil, queue: nil) { _ in
++            subscriber.putNext(0)
++        }
++        return ActionDisposable { NotificationCenter.default.removeObserver(observer) }
++    }
++}
++
+ public func updatedPresentationData(accountManager: AccountManager<TelegramAccountManagerTypes>, applicationInForeground: Signal<Bool, NoError>, systemUserInterfaceStyle: Signal<WindowUserInterfaceStyle, NoError>) -> Signal<PresentationData, NoError> {
+-    return combineLatest(accountManager.sharedData(keys: [SharedDataKeys.localizationSettings, ApplicationSpecificSharedDataKeys.presentationThemeSettings, ApplicationSpecificSharedDataKeys.contactSynchronizationSettings]), systemUserInterfaceStyle)
+-    |> mapToSignal { sharedData, systemUserInterfaceStyle -> Signal<PresentationData, NoError> in
++    return combineLatest(accountManager.sharedData(keys: [SharedDataKeys.localizationSettings, ApplicationSpecificSharedDataKeys.presentationThemeSettings, ApplicationSpecificSharedDataKeys.contactSynchronizationSettings]), systemUserInterfaceStyle, faithgramPresentationChanges())
++    |> mapToSignal { sharedData, systemUserInterfaceStyle, _ -> Signal<PresentationData, NoError> in
+         let themeSettings: PresentationThemeSettings
+         if let current = sharedData.entries[ApplicationSpecificSharedDataKeys.presentationThemeSettings]?.get(PresentationThemeSettings.self) {
+             themeSettings = current
+@@ -825,7 +835,7 @@ public func updatedPresentationData(accountManager: AccountManager<TelegramAccou
+                         if let localizationSettings = localizationSettings {
+                             stringsValue = PresentationStrings(primaryComponent: PresentationStrings.Component(languageCode: localizationSettings.primaryComponent.languageCode, localizedName: localizationSettings.primaryComponent.localizedName, pluralizationRulesCode: localizationSettings.primaryComponent.customPluralizationCode, dict: dictFromLocalization(localizationSettings.primaryComponent.localization)), secondaryComponent: localizationSettings.secondaryComponent.flatMap({ PresentationStrings.Component(languageCode: $0.languageCode, localizedName: $0.localizedName, pluralizationRulesCode: $0.customPluralizationCode, dict: dictFromLocalization($0.localization)) }), groupingSeparator: dateTimeFormat.groupingSeparator)
+                         } else {
+-                            stringsValue = defaultPresentationStrings
++                            stringsValue = PresentationStrings(primaryComponent: defaultPresentationStrings.primaryComponent, secondaryComponent: defaultPresentationStrings.secondaryComponent, groupingSeparator: dateTimeFormat.groupingSeparator)
+                         }
+                         let nameDisplayOrder = contactSettings.nameDisplayOrder
+                         let nameSortOrder = currentPersonNameSortOrder()
+diff --git a/submodules/TelegramUI/BUILD b/submodules/TelegramUI/BUILD
+index 5da8c15..8b08b12 100644
+--- a/submodules/TelegramUI/BUILD
++++ b/submodules/TelegramUI/BUILD
+@@ -49,6 +49,7 @@ swift_library(
+         "-warnings-as-errors",
+     ],
+     deps = [
++        "//submodules/FaithgramActivity",
+         "//third-party/recaptcha:RecaptchaEnterprise",
+         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
+         "//submodules/SSignalKit/SSignalKit:SSignalKit",
+diff --git a/submodules/TelegramUI/Components/Chat/ChatInputTextNode/Sources/ChatRichTextInputNode.swift b/submodules/TelegramUI/Components/Chat/ChatInputTextNode/Sources/ChatRichTextInputNode.swift
+index cdcd424..b35e8ca 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatInputTextNode/Sources/ChatRichTextInputNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatInputTextNode/Sources/ChatRichTextInputNode.swift
+@@ -300,6 +300,7 @@ public protocol ChatRichTextInputNode: AnyObject {
+     /// `inputView` (the editor's backing view): this is the `UITextView.inputView` slot,
+     /// set to an empty view to suppress the system keyboard for the entity keyboard.
+     var keyboardInputView: UIView? { get set }
++    var keyboardAccessoryView: UIView? { get set }
+ 
+     /// Reload the editor's input views (after changing `keyboardInputView`).
+     func reloadInputViews()
+@@ -982,6 +983,11 @@ final class ChatRichTextInputNodeImpl: ASDisplayNode, ChatRichTextInputNode {
+         set { self.textInputNodeImpl.delegate = newValue }
+     }
+ 
++    var keyboardAccessoryView: UIView? {
++        get { return self.textInputNodeImpl.textView.inputAccessoryView }
++        set { self.textInputNodeImpl.textView.inputAccessoryView = newValue }
++    }
++
+     var keyboardInputView: UIView? {
+         get { return self.textInputNodeImpl.textView.inputView }
+         set { self.textInputNodeImpl.textView.inputView = newValue }
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift
+index ffb7e15..6904dfd 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift
+@@ -541,7 +541,8 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
+             if arguments.edited {
+                 if let useEditedTimestamp = arguments.context.getAppConfigValue("message_primary_edited_date") as? Bool, useEditedTimestamp {
+                 } else {
+-                    updatedDateText = "\(arguments.presentationData.strings.Conversation_MessageEditedLabel) \(updatedDateText)"
++                    let mark = PatchClientPolicy.isEnabled(.saveEditHistory) ? FaithgramPreferences.editedMark : arguments.presentationData.strings.Conversation_MessageEditedLabel
++                    if !mark.isEmpty { updatedDateText = mark + " " + updatedDateText }
+                 }
+             }
+             if let impressionCount = arguments.impressionCount {
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
+index 98abd8e..d887fcc 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
+@@ -248,5 +248,6 @@ public func stringForMessageTimestampStatus(
+         }
+     }
+     
++    if message.attributes.contains(where: { $0 is FaithgramDeletedMessageAttribute }), !FaithgramPreferences.deletedMark.isEmpty { dateText = FaithgramPreferences.deletedMark + " " + dateText }
+     return dateText
+ }
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift
+index 5e06539..466a40d 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift
+@@ -352,7 +352,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
+             return
+         }
+         
+-        if !context.isPremium, case .inProgress = self.audioTranscriptionState {
++        if case .inProgress = self.audioTranscriptionState {
+             return
+         }
+         
+@@ -360,7 +360,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
+         let premiumConfiguration = PremiumConfiguration.with(appConfiguration: arguments.context.currentAppConfiguration.with { $0 })
+         
+         let transcriptionText = self.forcedAudioTranscriptionText ?? transcribedText(message: EngineMessage(message))
+-        if transcriptionText == nil && !arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
++        if transcriptionText == nil && !PatchClientPolicy.isEnabled(.localTranscription) && !arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
+             if premiumConfiguration.audioTransciptionTrialCount > 0 {
+                 if !arguments.associatedData.isPremium {
+                     if self.presentAudioTranscriptionTooltip(finished: false) {
+@@ -419,8 +419,10 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
+                 self.audioTranscriptionState = .inProgress
+                 self.requestUpdateLayout(true)
+                 
+-                if context.sharedContext.immediateExperimentalUISettings.localTranscription {
++                if PatchClientPolicy.isEnabled(.localTranscription) || context.sharedContext.immediateExperimentalUISettings.localTranscription {
+                     let appLocale = presentationData.strings.baseLanguageCode
++                    let convertedFile = EngineTempBox.shared.tempFile(fileName: "audio.m4a")
++                    self.fetchControls.with { $0?.fetch }?(true)
+                     
+                     let signal: Signal<LocallyTranscribedAudio?, NoError> = context.engine.data.get(TelegramEngine.EngineData.Item.Messages.Message(id: message.id))
+                     |> mapToSignal { message -> Signal<String?, NoError> in
+@@ -431,6 +433,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
+                             return .single(nil)
+                         }
+                         return context.engine.resources.data(id: EngineMediaResource.Id(file.resource.id))
++                        |> filter { $0.isComplete }
+                         |> take(1)
+                         |> mapToSignal { data -> Signal<String?, NoError> in
+                             if !data.isComplete {
+@@ -444,7 +447,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
+                             return .single(nil)
+                         }
+                         return convertOpusToAAC(sourcePath: result, allocateTempFile: {
+-                            return EngineTempBox.shared.tempFile(fileName: "audio.m4a").path
++                            return convertedFile.path
+                         })
+                     }
+                     |> mapToSignal { result -> Signal<LocallyTranscribedAudio?, NoError> in
+@@ -455,6 +458,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
+                     }
+                     
+                     self.transcribeDisposable = (signal
++                    |> afterDisposed { EngineTempBox.shared.dispose(convertedFile) }
+                     |> deliverOnMainQueue).startStrict(next: { [weak self] result in
+                         guard let strongSelf = self, let arguments = strongSelf.arguments else {
+                             return
+@@ -465,6 +469,11 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
+                         } else {
+                             strongSelf.audioTranscriptionState = .collapsed
+                             strongSelf.requestUpdateLayout(true)
++                            if PatchClientPolicy.isEnabled(.localTranscription) {
++                                let alert = UIAlertController(title: "faithgram", message: FaithgramPreferences.interfaceText("On-device transcription is unavailable for this audio or language. Check Speech Recognition permission in iOS settings."), preferredStyle: .alert)
++                                alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("OK"), style: .default))
++                                arguments.context.sharedContext.mainWindow?.presentNative(alert)
++                            }
+                         }
+                     }, completed: { [weak self] in
+                         guard let strongSelf = self else {
+@@ -509,7 +518,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
+     }
+     
+     private func presentAudioTranscriptionTooltip(finished: Bool) -> Bool {
+-        guard let arguments = self.arguments, !arguments.associatedData.isPremium else {
++        guard !PatchClientPolicy.isEnabled(.localTranscription), let arguments = self.arguments, !arguments.associatedData.isPremium else {
+             return false
+         }
+         
+@@ -771,7 +780,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
+                     displayTranscribe = false
+                 } else if arguments.message.id.peerId.namespace != Namespaces.Peer.SecretChat && !isViewOnceMessage && !arguments.presentationData.isPreview {
+                     let premiumConfiguration = PremiumConfiguration.with(appConfiguration: arguments.context.currentAppConfiguration.with { $0 })
+-                    if arguments.associatedData.isPremium || arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
++                    if PatchClientPolicy.isEnabled(.localTranscription) || arguments.associatedData.isPremium || arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
+                         displayTranscribe = true
+                     } else if premiumConfiguration.audioTransciptionTrialCount > 0 {
+                         if arguments.incoming {
+@@ -800,7 +809,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
+                 }
+                 
+                 let currentTime = Int32(Date().timeIntervalSince1970)
+-                if transcribedText == nil, let cooldownUntilTime = arguments.associatedData.audioTranscriptionTrial.cooldownUntilTime, cooldownUntilTime > currentTime {
++                if !PatchClientPolicy.isEnabled(.localTranscription), transcribedText == nil, let cooldownUntilTime = arguments.associatedData.audioTranscriptionTrial.cooldownUntilTime, cooldownUntilTime > currentTime {
+                     updatedAudioTranscriptionState = .locked
+                 }
+                 
+diff --git a/submodules/TelegramUI/Components/Chat/ChatRichTextEditorComposer/Sources/RichTextEditorChatInputNode.swift b/submodules/TelegramUI/Components/Chat/ChatRichTextEditorComposer/Sources/RichTextEditorChatInputNode.swift
+index b4b76db..4ad4ccb 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatRichTextEditorComposer/Sources/RichTextEditorChatInputNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatRichTextEditorComposer/Sources/RichTextEditorChatInputNode.swift
+@@ -656,6 +656,11 @@ public final class RichTextEditorChatInputNode: ASDisplayNode, ChatRichTextInput
+         }
+     }
+ 
++    public var keyboardAccessoryView: UIView? {
++        get { self.editorView.customInputAccessoryView }
++        set { self.editorView.customInputAccessoryView = newValue }
++    }
++
+     public var keyboardInputView: UIView? {
+         get { self.editorView.customInputView }
+         set { self.editorView.customInputView = newValue }
+diff --git a/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift b/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift
+index 826bdb4..b81e3e4 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift
+@@ -403,6 +403,89 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
+         return self.mediaActionButtons.micButton
+     }
+     
++    private var faithgramToolbar: UIToolbar?
++    private let faithgramTranslationDisposable = MetaDisposable()
++
++    private func updateFaithgramToolbar() {
++        guard let editor = self.richTextInputNode else { return }
++        let formatting = PatchClientPolicy.isEnabled(.formattingPanel)
++        let translation = PatchClientPolicy.isEnabled(.localTranslation)
++        guard formatting || translation else {
++            if self.faithgramToolbar != nil {
++                self.faithgramToolbar = nil
++                editor.keyboardAccessoryView = nil
++                editor.reloadInputViews()
++            }
++            return
++        }
++        let toolbar = self.faithgramToolbar ?? UIToolbar(frame: CGRect(x: 0, y: 0, width: 320, height: 44))
++        toolbar.autoresizingMask = [.flexibleWidth]
++        toolbar.barStyle = self.presentationInterfaceState?.theme.overallDarkAppearance == true ? .black : .default
++        var items: [UIBarButtonItem] = []
++        if formatting {
++            let controls: [(String, String, Selector)] = [
++                ("bold", "Bold", #selector(faithgramBold)),
++                ("italic", "Italic", #selector(faithgramItalic)),
++                ("link", "Link", #selector(formatAttributesLink(_:))),
++                ("underline", "Underline", #selector(faithgramUnderline)),
++                ("strikethrough", "Strikethrough", #selector(faithgramStrike)),
++                ("chevron.left.forwardslash.chevron.right", "Code", #selector(faithgramCode)),
++                ("text.quote", "Quote", #selector(faithgramQuote))
++            ]
++            for (symbol, label, action) in controls {
++                let item = UIBarButtonItem(image: UIImage(systemName: symbol), style: .plain, target: self, action: action)
++                item.accessibilityLabel = FaithgramPreferences.interfaceText(label)
++                items.append(item)
++                items.append(UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil))
++            }
++        }
++        if translation {
++            let item = UIBarButtonItem(image: UIImage(systemName: "character.bubble"), style: .plain, target: self, action: #selector(faithgramTranslate))
++            item.accessibilityLabel = FaithgramPreferences.interfaceText("Translate draft on this device")
++            items.append(item)
++        }
++        toolbar.items = items
++        if self.faithgramToolbar == nil {
++            self.faithgramToolbar = toolbar
++            editor.keyboardAccessoryView = toolbar
++            editor.reloadInputViews()
++        }
++    }
++    @objc private func faithgramBold() { if self.richTextInputNode?.usesNativeRichTextEngine == true { self.richTextInputNode?.performFormatAction(.bold) } else { self.formatAttributesBold(self) } }
++    @objc private func faithgramItalic() { if self.richTextInputNode?.usesNativeRichTextEngine == true { self.richTextInputNode?.performFormatAction(.italic) } else { self.formatAttributesItalic(self) } }
++    @objc private func faithgramUnderline() { if self.richTextInputNode?.usesNativeRichTextEngine == true { self.richTextInputNode?.performFormatAction(.underline) } else { self.formatAttributesUnderline(self) } }
++    @objc private func faithgramStrike() { if self.richTextInputNode?.usesNativeRichTextEngine == true { self.richTextInputNode?.performFormatAction(.strikethrough) } else { self.formatAttributesStrikethrough(self) } }
++    @objc private func faithgramCode() { if self.richTextInputNode?.usesNativeRichTextEngine == true { self.richTextInputNode?.performFormatAction(.monospace) } else { self.formatAttributesMonospace(self) } }
++    @objc private func faithgramQuote() { if self.richTextInputNode?.usesNativeRichTextEngine == true { self.richTextInputNode?.performFormatAction(.quote) } else { self.formatAttributesQuote(self) } }
++    @objc private func faithgramTranslate() {
++        guard let context = self.context, PatchClientPolicy.isEnabled(.localTranslation) else { return }
++        var original = NSAttributedString()
++        var range = 0 ..< 0
++        self.interfaceInteraction?.updateTextInputStateAndMode { current, inputMode in
++            original = current.inputText
++            range = current.selectionRange.isEmpty ? 0 ..< current.inputText.length : current.selectionRange
++            return (current, inputMode)
++        }
++        guard !range.isEmpty else { return }
++        let text = original.attributedSubstring(from: NSRange(location: range.lowerBound, length: range.count)).string
++        let target = FaithgramPreferences.text("translationTarget", fallback: Locale.current.languageCode ?? "en")
++        self.faithgramTranslationDisposable.set((context.engine.messages.translate(texts: [(text, [])], toLang: target)
++        |> deliverOnMainQueue).start(next: { [weak self] result in
++            guard let self, let result = result.first else { return }
++            self.interfaceInteraction?.updateTextInputStateAndMode { current, inputMode in
++                guard current.inputText.isEqual(to: original) else { return (current, inputMode) }
++                let updated = NSMutableAttributedString(attributedString: original)
++                updated.replaceCharacters(in: NSRange(location: range.lowerBound, length: range.count), with: result.0)
++                let caret = range.lowerBound + (result.0 as NSString).length
++                return (ChatTextInputState(inputText: updated, selectionRange: caret ..< caret), .text)
++            }
++        }, error: { _ in
++            let alert = UIAlertController(title: FaithgramPreferences.interfaceText("On-device translation unavailable"), message: FaithgramPreferences.interfaceText("Allow the language download requested by iOS, or choose a supported language."), preferredStyle: .alert)
++            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("OK"), style: .default))
++            context.sharedContext.mainWindow?.presentNative(alert)
++        }))
++    }
++
+     private let statusDisposable = MetaDisposable()
+     override public var interfaceInteraction: ChatPanelInterfaceInteraction? {
+         didSet {
+@@ -1123,6 +1206,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
+     }
+     
+     deinit {
++        self.faithgramTranslationDisposable.dispose()
+         self.statusDisposable.dispose()
+         self.tooltipController?.dismiss()
+         self.currentEmojiSuggestion?.disposable.dispose()
+@@ -1277,6 +1361,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
+         richTextInputNode.inputView.disablesInteractiveTransitionGestureRecognizer = true
+         richTextInputNode.inputIsUserInteractionEnabled = !self.sendingTextDisabled
+         self.richTextInputNode = richTextInputNode
++        self.updateFaithgramToolbar()
+         richTextInputNode.emojiViewProvider = { [weak self] emoji in
+             return self?.emojiViewProvider?(emoji)
+         }
+@@ -3895,6 +3980,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
+         transition.updateFrame(view: self.glassBackgroundContainer, frame: containerFrame)
+         self.glassBackgroundContainer.update(size: containerFrame.size, isDark: interfaceState.theme.overallDarkAppearance, transition: ComponentTransition(transition))
+         
++        self.updateFaithgramToolbar()
+         return contentHeight
+     }
+     
+diff --git a/submodules/TelegramUI/Components/HeaderPanelContainerComponent/Sources/HeaderPanelContainerComponent.swift b/submodules/TelegramUI/Components/HeaderPanelContainerComponent/Sources/HeaderPanelContainerComponent.swift
+index 4d60d6c..9d7d775 100644
+--- a/submodules/TelegramUI/Components/HeaderPanelContainerComponent/Sources/HeaderPanelContainerComponent.swift
++++ b/submodules/TelegramUI/Components/HeaderPanelContainerComponent/Sources/HeaderPanelContainerComponent.swift
+@@ -38,17 +38,20 @@ public final class HeaderPanelContainerComponent: Component {
+     public let theme: PresentationTheme
+     public let preferClearGlass: Bool
+     public let tabs: AnyComponent<Empty>?
++    public let tabsAtBottom: Bool
+     public let panels: [Panel]
+     
+     public init(
+         theme: PresentationTheme,
+         preferClearGlass: Bool = false,
+         tabs: AnyComponent<Empty>?,
++        tabsAtBottom: Bool = false,
+         panels: [Panel]
+     ) {
+         self.theme = theme
+         self.preferClearGlass = preferClearGlass
+         self.tabs = tabs
++        self.tabsAtBottom = tabsAtBottom
+         self.panels = panels
+     }
+     
+@@ -59,6 +62,7 @@ public final class HeaderPanelContainerComponent: Component {
+         if lhs.preferClearGlass != rhs.preferClearGlass {
+             return false
+         }
++        if lhs.tabsAtBottom != rhs.tabsAtBottom { return false }
+         if lhs.tabs != rhs.tabs {
+             return false
+         }
+@@ -87,6 +91,32 @@ public final class HeaderPanelContainerComponent: Component {
+         private let contentContainer: UIView
+         
+         private var tabsView: ComponentView<Empty>?
++        private var bottomTabsSize: CGSize = .zero
++        private var bottomTabsBackground: UIVisualEffectView?
++
++        public var bottomTabsHeight: CGFloat {
++            return self.component?.tabsAtBottom == true && self.tabs != nil ? self.bottomTabsSize.height + 8 : 0
++        }
++        public func layoutBottomTabs(in container: UIView, size: CGSize, bottomInset: CGFloat, transition: ContainedViewLayoutTransition) {
++            guard self.component?.tabsAtBottom == true, let tabs = self.tabs else {
++                self.bottomTabsBackground?.removeFromSuperview()
++                self.bottomTabsBackground = nil
++                return
++            }
++            let background = self.bottomTabsBackground ?? UIVisualEffectView(effect: UIBlurEffect(style: self.component?.theme.overallDarkAppearance == true ? .dark : .light))
++            background.layer.cornerRadius = 18
++            background.clipsToBounds = true
++            if background.superview !== container { container.addSubview(background) }
++            if tabs.superview !== background.contentView {
++                background.contentView.addSubview(tabs)
++                if let child = tabs as? HeaderPanelContainerChildView { child.setOverlayContainerView(overlayContainerView: background.contentView) }
++            }
++            self.bottomTabsBackground = background
++            let frame = CGRect(x: (size.width - self.bottomTabsSize.width) / 2, y: size.height - bottomInset - self.bottomTabsSize.height - 4, width: self.bottomTabsSize.width, height: self.bottomTabsSize.height)
++            transition.updateFrame(view: background, frame: frame)
++            transition.updateFrame(view: tabs, frame: CGRect(origin: .zero, size: self.bottomTabsSize))
++        }
++        deinit { self.bottomTabsBackground?.removeFromSuperview() }
+         private var panelViews: [AnyHashable: PanelItemView] = [:]
+         
+         private var component: HeaderPanelContainerComponent?
+@@ -151,17 +181,20 @@ public final class HeaderPanelContainerComponent: Component {
+                 )
+                 let tabsFrame = CGRect(origin: CGPoint(x: 0.0, y: size.height), size: tabsSize)
+                 if let tabsComponentView = tabsView.view {
+-                    if tabsComponentView.superview == nil {
++                    if !component.tabsAtBottom && tabsComponentView.superview !== self.contentContainer {
+                         self.contentContainer.addSubview(tabsComponentView)
+                         if let tabsComponentView = tabsComponentView as? HeaderPanelContainerChildView {
+                             tabsComponentView.setOverlayContainerView(overlayContainerView: self.backgroundContainer.contentView)
+                         }
+                         transition.animateAlpha(view: tabsComponentView, from: 0.0, to: 1.0)
+                     }
+-                    tabsTransition.setFrame(view: tabsComponentView, frame: tabsFrame)
++                    if !component.tabsAtBottom { tabsTransition.setFrame(view: tabsComponentView, frame: tabsFrame) }
++                }
++                self.bottomTabsSize = tabsSize
++                if !component.tabsAtBottom {
++                    size.height += tabsSize.height
++                    isFirstPanel = false
+                 }
+-                size.height += tabsSize.height
+-                isFirstPanel = false
+             } else if let tabsView = self.tabsView {
+                 self.tabsView = nil
+                 if let tabsComponentView = tabsView.view {
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
+index fdfd1ce..6df53fb 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
+@@ -137,6 +137,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+     let titleExpandedStatusIconView: ComponentHostView<Empty>
+     var titleExpandedStatusIconSize: CGSize?
+     
++    let titleFaithgramBadgeView: ComponentHostView<Empty>
++    let titleExpandedFaithgramBadgeView: ComponentHostView<Empty>
++    var faithgramBadgeSize: CGSize?
++    var expandedFaithgramBadgeSize: CGSize?
++
+     var subtitleRating: ComponentView<Empty>?
+     
+     let subtitleNodeContainer: ASDisplayNode
+@@ -243,6 +248,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+         self.titleExpandedVerifiedIconView = ComponentHostView<Empty>()
+         self.titleNode.stateNode(forKey: TitleNodeStateExpanded)?.view.addSubview(self.titleExpandedVerifiedIconView)
+         
++        self.titleFaithgramBadgeView = ComponentHostView<Empty>()
++        self.titleNode.stateNode(forKey: TitleNodeStateRegular)?.view.addSubview(self.titleFaithgramBadgeView)
++        self.titleExpandedFaithgramBadgeView = ComponentHostView<Empty>()
++        self.titleNode.stateNode(forKey: TitleNodeStateExpanded)?.view.addSubview(self.titleExpandedFaithgramBadgeView)
++
+         self.titleStatusIconView = ComponentHostView<Empty>()
+         self.titleNode.stateNode(forKey: TitleNodeStateRegular)?.view.addSubview(self.titleStatusIconView)
+         
+@@ -604,7 +614,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+                 credibilityIcon = .scam
+             } else if let emojiStatus = peer.emojiStatus {
+                 statusIcon = .emojiStatus(emojiStatus)
+-            } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && (peer.id != self.context.account.peerId || self.isSettings || self.isMyProfile) {
++            } else if (peer.isPremium || (peer.id == self.context.account.peerId && PatchClientPolicy.isEnabled(.localPremium))) && !premiumConfiguration.isPremiumDisabled && (peer.id != self.context.account.peerId || self.isSettings || self.isMyProfile) {
+                 credibilityIcon = .premium
+             } else {
+                 credibilityIcon = .none
+@@ -1133,6 +1143,33 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+             self.titleExpandedVerifiedIconSize = expandedIconSize
+         }
+         
++        do {
++            let badge = (peer as? TelegramUser).flatMap { FaithgramPreferences.badge(for: $0.id.id._internalGetInt64Value()) }
++            let content: EmojiStatusComponent.Content
++            if let fileId = badge?.fileId {
++                content = .animation(content: .customEmoji(fileId: fileId), size: CGSize(width: 80, height: 80), placeholderColor: presentationData.theme.list.mediaPlaceholderColor, themeColor: navigationContentsAccentColor, loopMode: .forever)
++            } else if badge == .betaTester {
++                content = .image(image: UIImage(systemName: "testtube.2"), tintColor: navigationContentsAccentColor)
++            } else {
++                content = .none
++            }
++            let badgeViews = [self.titleFaithgramBadgeView, self.titleExpandedFaithgramBadgeView]
++            var sizes: [CGSize] = []
++            for view in badgeViews {
++                let size = view.update(
++                    transition: ComponentTransition(navigationTransition),
++                    component: AnyComponent(EmojiStatusComponent(context: self.context, animationCache: self.animationCache, animationRenderer: self.animationRenderer, content: content, isVisibleForAnimations: true, useSharedAnimation: true, action: nil)),
++                    environment: {},
++                    containerSize: CGSize(width: 26, height: 26)
++                )
++                view.isAccessibilityElement = badge != nil
++                view.accessibilityLabel = badge.map { "faithgram " + $0.title }
++                sizes.append(badge == nil ? .zero : size)
++            }
++            self.faithgramBadgeSize = sizes[0]
++            self.expandedFaithgramBadgeSize = sizes[1]
++        }
++
+         var actualNavigationContentsColor = navigationContentsAccentColor
+         actualNavigationContentsColor = presentationData.theme.chat.inputPanel.panelControlColor
+         
+@@ -1579,6 +1616,15 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+             nextExpandedIconX += 4.0 + titleExpandedCredibilityIconSize.width
+         }
+                 
++        if let size = self.faithgramBadgeSize, let expandedSize = self.expandedFaithgramBadgeSize, size.width > 0 {
++            titleHorizontalOffset -= (size.width + 4) / 2
++            let collapsedOffset = self.navigationTransition.map { -10.0 * $0.fraction } ?? 0
++            transition.updateFrame(view: self.titleFaithgramBadgeView, frame: CGRect(x: nextIconX + 4 + collapsedOffset, y: floor((titleSize.height - size.height) / 2), width: size.width, height: size.height))
++            transition.updateFrame(view: self.titleExpandedFaithgramBadgeView, frame: CGRect(x: nextExpandedIconX + 4, y: floor((titleExpandedSize.height - expandedSize.height) / 2) + 1, width: expandedSize.width, height: expandedSize.height))
++            nextIconX += size.width + 4
++            nextExpandedIconX += expandedSize.width + 4
++        }
++
+         if let verifiedIconSize = self.verifiedIconSize, let titleExpandedVerifiedIconSize = self.titleExpandedVerifiedIconSize, verifiedIconSize.width > 0.0 {
+             let leftOffset: CGFloat
+             let leftExpandedOffset: CGFloat
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
 index fd01930..2d287bb 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
@@ -391,7 +2916,7 @@ index fd01930..2d287bb 100644
      case dataAndStorage
      case appearance
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
-index 806e652..4f1eb69 100644
+index 806e652..ca6ee3d 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
 +++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
 @@ -92,6 +92,8 @@ extension PeerInfoScreenNode {
@@ -403,22 +2928,91 @@ index 806e652..4f1eb69 100644
          case .privacyAndSecurity:
              if let settings = self.data?.globalSettings {
                  let _ = (combineLatest(self.blockedPeers.get(), self.hasTwoStepAuth.get())
+@@ -231,7 +233,7 @@ extension PeerInfoScreenNode {
+                     }
+                 }
+                 
+-                if count >= maximumAvailableAccounts {
++                if count >= maximumAvailableAccounts && !PatchClientPolicy.isEnabled(.unlimitedAccounts) {
+                     var replaceImpl: ((ViewController) -> Void)?
+                     let controller = PremiumLimitScreen(context: strongSelf.context, subject: .accounts, count: Int32(count), action: {
+                         let controller = PremiumIntroScreen(context: strongSelf.context, source: .accounts)
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
-index c5f58f4..c646dab 100644
+index c5f58f4..333bf85 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
 +++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
-@@ -233,6 +233,9 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
-     items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 1, text: presentationData.strings.Settings_PrivacySettings, icon: PresentationResourcesSettings.security, action: {
-         interaction.openSettings(.privacyAndSecurity)
-     }))
-+    items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 20, text: "Faithgram", icon: PresentationResourcesSettings.security, action: {
+@@ -14,6 +14,7 @@ import TelegramStringFormatting
+ import PeerNameColorItem
+ 
+ enum SettingsSection: Int, CaseIterable {
++    case faithgram
+     case edit
+     case phone
+     case accounts
+@@ -37,6 +38,10 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
+         items[section] = []
+     }
+     
++    items[.faithgram]!.append(PeerInfoScreenDisclosureItem(id: 20, text: FaithgramPreferences.interfaceText("Faithgram"), icon: PresentationResourcesSettings.security, action: {
 +        interaction.openSettings(.patchClient)
 +    }))
-     items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 2, text: presentationData.strings.Settings_ChatSettings, icon: PresentationResourcesSettings.dataAndStorage, action: {
-         interaction.openSettings(.dataAndStorage)
-     }))
++
+     let setPhotoTitle: String
+     if let peer = data.peer, !peer.profileImageRepresentations.isEmpty {
+         setPhotoTitle = presentationData.strings.Settings_ChangeProfilePhoto
+diff --git a/submodules/TelegramUI/Components/RichTextEditor/Sources/RichTextEditorUIKit/Canvas/DocumentCanvasView.swift b/submodules/TelegramUI/Components/RichTextEditor/Sources/RichTextEditorUIKit/Canvas/DocumentCanvasView.swift
+index 0b8b189..c0a44c2 100644
+--- a/submodules/TelegramUI/Components/RichTextEditor/Sources/RichTextEditorUIKit/Canvas/DocumentCanvasView.swift
++++ b/submodules/TelegramUI/Components/RichTextEditor/Sources/RichTextEditorUIKit/Canvas/DocumentCanvasView.swift
+@@ -600,6 +600,8 @@ final class DocumentCanvasView: UIView {
+     /// caret keeps rendering). `nil` ⇒ system keyboard.
+     var customInputView: UIView?
+     override var inputView: UIView? { return self.customInputView }
++    var customInputAccessoryView: UIView?
++    override var inputAccessoryView: UIView? { return self.customInputAccessoryView }
+ 
+     /// Test seam: when set, replaces the live `textInputMode?.primaryLanguage` lookup.
+     /// Avoids subclassing the `final class DocumentCanvasView` just for tests.
+diff --git a/submodules/TelegramUI/Components/RichTextEditor/Sources/RichTextEditorUIKit/RichTextEditorView.swift b/submodules/TelegramUI/Components/RichTextEditor/Sources/RichTextEditorUIKit/RichTextEditorView.swift
+index 24d9806..e941aac 100644
+--- a/submodules/TelegramUI/Components/RichTextEditor/Sources/RichTextEditorUIKit/RichTextEditorView.swift
++++ b/submodules/TelegramUI/Components/RichTextEditor/Sources/RichTextEditorUIKit/RichTextEditorView.swift
+@@ -481,6 +481,11 @@ public final class RichTextEditorView: UIView, UIScrollViewDelegate {
+     /// A custom input view that replaces the system keyboard while the editor is first responder.
+     /// Set an `EmptyInputView` to hide the keyboard while showing a separate input panel (the caret
+     /// stays visible because the canvas remains first responder); `nil` restores the system keyboard.
++    public var customInputAccessoryView: UIView? {
++        get { canvas.customInputAccessoryView }
++        set { canvas.customInputAccessoryView = newValue; canvas.reloadInputViews() }
++    }
++
+     public var customInputView: UIView? {
+         get { canvas.customInputView }
+         set {
+diff --git a/submodules/TelegramUI/Components/TranslateHeaderPanelComponent/Sources/ChatTranslationPanelNode.swift b/submodules/TelegramUI/Components/TranslateHeaderPanelComponent/Sources/ChatTranslationPanelNode.swift
+index a2ad5a9..6d27ed9 100644
+--- a/submodules/TelegramUI/Components/TranslateHeaderPanelComponent/Sources/ChatTranslationPanelNode.swift
++++ b/submodules/TelegramUI/Components/TranslateHeaderPanelComponent/Sources/ChatTranslationPanelNode.swift
+@@ -213,7 +213,7 @@ final class ChatTranslationPanelNode: ASDisplayNode {
+         }
+         let isPremium = info.isPremium
+         
+-        var translationAvailable = isPremium
++        var translationAvailable = isPremium || PatchClientPolicy.isEnabled(.localTranslation)
+         if case let .channel(channel) = info.peer, channel.flags.contains(.autoTranslateEnabled) {
+             translationAvailable = true
+         }
+@@ -232,7 +232,7 @@ final class ChatTranslationPanelNode: ASDisplayNode {
+         
+         let isPremium = info.isPremium
+         
+-        var translationAvailable = isPremium
++        var translationAvailable = isPremium || PatchClientPolicy.isEnabled(.localTranslation)
+         if case let .channel(channel) = info.peer, channel.flags.contains(.autoTranslateEnabled) {
+             translationAvailable = true
+         }
 diff --git a/submodules/TelegramUI/Sources/AppDelegate.swift b/submodules/TelegramUI/Sources/AppDelegate.swift
-index b1ea96b..9205b15 100644
+index b1ea96b..5ab9044 100644
 --- a/submodules/TelegramUI/Sources/AppDelegate.swift
 +++ b/submodules/TelegramUI/Sources/AppDelegate.swift
 @@ -290,7 +290,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
@@ -467,3 +3061,245 @@ index b1ea96b..9205b15 100644
          var isDebugConfiguration = false
          #if DEBUG
          isDebugConfiguration = true
+@@ -1540,13 +1551,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+         
+         self.maybeCheckForUpdates()
+ 
+-        #if canImport(AppCenter)
+-        if !buildConfig.isAppStoreBuild, let appCenterId = buildConfig.appCenterId, !appCenterId.isEmpty {
+-            AppCenter.start(withAppSecret: buildConfig.appCenterId, services: [
+-                Crashes.self
+-            ])
+-        }
+-        #endif
++
+         
+         if #available(iOS 13.0, *) {
+             let cleanupTaskId = "\(baseAppBundleId).cleanup"
+@@ -1924,6 +1929,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+     }
+ 
+     func applicationDidEnterBackground(_ application: UIApplication) {
++        if #available(iOS 16.2, *) { FaithgramActivityManager.shared.setActive(false) }
+         let _ = (self.sharedContextPromise.get()
+         |> take(1)
+         |> deliverOnMainQueue).start(next: { sharedApplicationContext in
+@@ -2003,6 +2009,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+     }
+ 
+     func applicationDidBecomeActive(_ application: UIApplication) {
++        if #available(iOS 16.2, *) { FaithgramActivityManager.shared.setActive(true) }
+         self.isInForegroundValue = true
+         self.isInForegroundPromise.set(true)
+         self.isActiveValue = true
+diff --git a/submodules/TelegramUI/Sources/ChatHistoryEntriesForView.swift b/submodules/TelegramUI/Sources/ChatHistoryEntriesForView.swift
+index 6cac18a..4091b38 100644
+--- a/submodules/TelegramUI/Sources/ChatHistoryEntriesForView.swift
++++ b/submodules/TelegramUI/Sources/ChatHistoryEntriesForView.swift
+@@ -143,6 +143,7 @@ func chatHistoryEntriesForView(
+     var count = 0
+     loop: for entry in view.entries {
+         var message = entry.message
++        if FaithgramMessageFilter.matches(message.text) { continue }
+         var isRead = entry.isRead
+         
+         var pinToTop = false
+diff --git a/submodules/TelegramUI/Sources/ChatHistoryListNode.swift b/submodules/TelegramUI/Sources/ChatHistoryListNode.swift
+index b547dd3..4c3cea8 100644
+--- a/submodules/TelegramUI/Sources/ChatHistoryListNode.swift
++++ b/submodules/TelegramUI/Sources/ChatHistoryListNode.swift
+@@ -2165,7 +2165,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
+                 )
+                 
+                 var translateToLanguage: (fromLang: String, toLang: String)?
+-                if let translationState, (isPremium || autoTranslate)  && translationState.isEnabled {
++                if let translationState, (isPremium || autoTranslate || PatchClientPolicy.isEnabled(.localTranslation)) && translationState.isEnabled {
+                     var languageCode = translationState.toLang ?? chatPresentationData.strings.baseLanguageCode
+                     let rawSuffix = "-raw"
+                     if languageCode.hasSuffix(rawSuffix) {
+diff --git a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
+index 07cef5b..68e04e7 100644
+--- a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
++++ b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
+@@ -963,6 +963,26 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
+         let isPremium = accountPeer?.isPremium ?? false
+ 
+         var actions: [ContextMenuItem] = []
++        if message.id.namespace == Namespaces.Message.Cloud, message.id.peerId.namespace != Namespaces.Peer.SecretChat {
++            if PatchClientPolicy.isEnabled(.saveEditHistory) || PatchClientPolicy.isEnabled(.saveDeletedMessages) {
++                actions.append(.action(ContextMenuActionItem(text: FaithgramPreferences.interfaceText("Message history"), icon: { theme in
++                    return UIImage(systemName: "clock.arrow.circlepath")?.withTintColor(theme.contextMenu.primaryColor, renderingMode: .alwaysOriginal)
++                }, action: { _, f in
++                    f(.dismissWithoutContent)
++                    controllerInteraction.navigationController()?.pushViewController(faithgramMessageHistoryController(context: context, peerId: message.id.peerId.toInt64(), namespace: message.id.namespace, messageId: message.id.id))
++                })))
++            }
++            if PatchClientPolicy.isEnabled(.archiveDownloadedMedia) {
++                let enabled = FaithgramPreferences.mediaRules[String(message.id.peerId.toInt64())] != false
++                actions.append(.action(ContextMenuActionItem(text: FaithgramPreferences.interfaceText(enabled ? "Disable media archive for this chat" : "Enable media archive for this chat"), icon: { theme in
++                    return UIImage(systemName: "archivebox")?.withTintColor(theme.contextMenu.primaryColor, renderingMode: .alwaysOriginal)
++                }, action: { _, f in
++                    FaithgramPreferences.setMediaRule(peerId: message.id.peerId.toInt64(), save: !enabled)
++                    f(.default)
++                })))
++            }
++        }
++
+ 
+         if isSharedMediaPolls && messages.count == 1 {
+             actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.SharedMedia_ViewInChat, icon: { theme in
+diff --git a/submodules/TelegramUI/Sources/FaithgramActivityManager.swift b/submodules/TelegramUI/Sources/FaithgramActivityManager.swift
+new file mode 100644
+index 0000000..ddff6c1
+--- /dev/null
++++ b/submodules/TelegramUI/Sources/FaithgramActivityManager.swift
+@@ -0,0 +1,57 @@
++import Foundation
++import UIKit
++import ActivityKit
++import FaithgramActivity
++import TelegramCore
++
++@available(iOS 16.2, *)
++final class FaithgramActivityManager {
++    static let shared = FaithgramActivityManager()
++    private var observer: NSObjectProtocol?
++    private var active = false
++    private var updating = false
++    private var pending = false
++    private init() {
++        observer = NotificationCenter.default.addObserver(forName: FaithgramPreferences.changed, object: nil, queue: .main) { [weak self] _ in self?.refresh() }
++    }
++    deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
++    func setActive(_ active: Bool) { self.active = active; refresh() }
++    private func refresh() {
++        if updating { pending = true; return }
++        let enabled = PatchClientPolicy.isEnabled(.dynamicIsland)
++        let active = self.active
++        let activities = Activity<FaithgramActivityAttributes>.activities
++        if !enabled {
++            updating = true
++            Task { @MainActor in
++                for activity in activities { await activity.end(nil, dismissalPolicy: .immediate) }
++                self.finished()
++            }
++            return
++        }
++        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
++            FaithgramPreferences.setText("activityError", "Allow Live Activities in iOS settings to show Faithgram in Dynamic Island.")
++            return
++        }
++        let content = ActivityContent(state: FaithgramActivityAttributes.ContentState(active: active), staleDate: nil)
++        if let first = activities.first {
++            updating = true
++            Task { @MainActor in
++                await first.update(content)
++                for extra in activities.dropFirst() { await extra.end(nil, dismissalPolicy: .immediate) }
++                self.finished()
++            }
++        } else if active && UIApplication.shared.applicationState == .active {
++            do {
++                let _ = try Activity.request(attributes: FaithgramActivityAttributes(), content: content, pushType: nil)
++                FaithgramPreferences.setText("activityError", "")
++            } catch {
++                FaithgramPreferences.setText("activityError", "iOS could not start the Live Activity. Check signing and Live Activities permissions.")
++            }
++        }
++    }
++    private func finished() {
++        updating = false
++        if pending { pending = false; refresh() }
++    }
++}
+diff --git a/submodules/TranslateUI/Sources/ChatTranslation.swift b/submodules/TranslateUI/Sources/ChatTranslation.swift
+index e21e907..470e4ea 100644
+--- a/submodules/TranslateUI/Sources/ChatTranslation.swift
++++ b/submodules/TranslateUI/Sources/ChatTranslation.swift
+@@ -234,12 +234,14 @@ public func chatTranslationState(context: AccountContext, peerId: EnginePeer.Id,
+             context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.AutoTranslateEnabled(id: peerId))
+         )
+         |> mapToSignal { settings, autoTranslateEnabled in
+-            if !settings.translateChats && !autoTranslateEnabled {
++            if !settings.translateChats && !autoTranslateEnabled && !PatchClientPolicy.isEnabled(.localTranslation) {
+                 return .single(nil)
+             }
+             
+             var dontTranslateLanguages = Set<String>()
+-            if let ignoredLanguages = settings.ignoredLanguages {
++            if PatchClientPolicy.isEnabled(.localTranslation) {
++                dontTranslateLanguages.insert(FaithgramPreferences.text("translationTarget", fallback: baseLang))
++            } else if let ignoredLanguages = settings.ignoredLanguages {
+                 dontTranslateLanguages = Set(ignoredLanguages)
+             } else {
+                 dontTranslateLanguages.insert(baseLang)
+@@ -251,7 +253,7 @@ public func chatTranslationState(context: AccountContext, peerId: EnginePeer.Id,
+             return cachedChatTranslationState(engine: context.engine, peerId: peerId, threadId: threadId)
+             |> mapToSignal { cached in
+                 let currentTime = Int32(CFAbsoluteTimeGetCurrent() + kCFAbsoluteTimeIntervalSince1970)
+-                if let cached, let timestamp = cached.timestamp, cached.baseLang == baseLang && currentTime - timestamp < 60 * 60 {
++                if !PatchClientPolicy.isEnabled(.localTranslation), let cached, let timestamp = cached.timestamp, cached.baseLang == baseLang && currentTime - timestamp < 60 * 60 {
+                     if !dontTranslateLanguages.contains(cached.fromLang) {
+                         return .single(cached)
+                     } else {
+@@ -349,7 +351,7 @@ public func chatTranslationState(context: AccountContext, peerId: EnginePeer.Id,
+                             let isEnabled: Bool
+                             if let currentIsEnabled = cached?.isEnabled {
+                                 isEnabled = currentIsEnabled
+-                            } else if autoTranslateEnabled {
++                            } else if autoTranslateEnabled || PatchClientPolicy.isEnabled(.localTranslation) {
+                                 isEnabled = true
+                             } else {
+                                 isEnabled = false
+@@ -359,7 +361,7 @@ public func chatTranslationState(context: AccountContext, peerId: EnginePeer.Id,
+                                 baseLang: baseLang,
+                                 fromLang: fromLang,
+                                 timestamp: currentTime,
+-                                toLang: cached?.toLang,
++                                toLang: PatchClientPolicy.isEnabled(.localTranslation) ? FaithgramPreferences.text("translationTarget", fallback: baseLang) : cached?.toLang,
+                                 isEnabled: isEnabled
+                             )
+                             let _ = updateChatTranslationState(engine: context.engine, peerId: peerId, threadId: threadId, state: state).start()
+diff --git a/submodules/TranslateUI/Sources/Translate.swift b/submodules/TranslateUI/Sources/Translate.swift
+index 38152a4..daf5c10 100644
+--- a/submodules/TranslateUI/Sources/Translate.swift
++++ b/submodules/TranslateUI/Sources/Translate.swift
+@@ -173,6 +173,9 @@ public func normalizeTranslationLanguage(_ code: String) -> String {
+ }
+ 
+ public func canTranslateChats(context: AccountContext) -> Bool {
++    if PatchClientPolicy.isEnabled(.localTranslation) {
++        if #available(iOS 18.0, *) { return true } else { return false }
++    }
+     let translationConfiguration = TranslationConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
+     var chatTranslationAvailable = true
+     switch translationConfiguration.auto {
+@@ -321,8 +324,7 @@ private struct TranslationViewImpl: View {
+                 }
+                 
+                 task.completion(resultMap)
+-            } catch let e {
+-                print("Translation error: \(e)")
++            } catch {
+                 task.completion(nil)
+             }
+             
+@@ -391,6 +393,11 @@ public final class ExperimentalInternalTranslationServiceImpl: ExperimentalInter
+         }
+         
+         func translate(texts: [AnyHashable: String], fromLang: String, toLang: String, onResult: @escaping ([AnyHashable: String]?) -> Void) -> Disposable {
++            let fromLang = fromLang == "auto" ? (NLLanguageRecognizer.dominantLanguage(for: texts.values.joined(separator: " "))?.rawValue ?? "en") : fromLang
++            if fromLang == toLang {
++                onResult(texts)
++                return EmptyDisposable
++            }
+             let id = self.nextId
+             self.nextId += 1
+             self.taskContainer.with { taskContainer in
+@@ -438,6 +445,7 @@ public final class ExperimentalInternalTranslationServiceImpl: ExperimentalInter
+ }
+ 
+ func alternativeTranslateText(text: String, fromLang: String?, toLang: String) -> Signal<(String, [MessageTextEntity])?, TelegramCore.TranslationError> {
++    if PatchClientPolicy.isEnabled(.localTranslation) { return .fail(.generic) }
+     return Signal { subscriber in
+         var task: URLSessionTask?
+         Queue.concurrentDefaultQueue().async {

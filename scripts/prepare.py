@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import subprocess
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -41,6 +42,18 @@ def prepare(source: Path, fetch_submodules=False):
         if reverse.returncode != 0:
             raise RuntimeError("Source differs from both the original and patched tree:\n" + check.stderr)
         print("PatchClient changes are already present.")
+    for asset in MANIFEST.get("assets", []):
+        original = (PROJECT / asset["path"]).resolve()
+        if not original.is_relative_to(PROJECT.resolve()):
+            raise RuntimeError("Asset path is outside the project.")
+        if hashlib.sha256(original.read_bytes()).hexdigest() != asset["sha256"]:
+            raise RuntimeError(f"Asset integrity mismatch: {asset['path']}")
+        for relative in asset["destinations"]:
+            destination = (source / relative).resolve()
+            if not destination.is_relative_to(source):
+                raise RuntimeError("Asset destination is outside the source tree.")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(original, destination)
     if fetch_submodules:
         run("git", "submodule", "update", "--init", "--recursive", "--depth=1", "-j4", cwd=source)
     return source

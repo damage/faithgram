@@ -40,12 +40,12 @@ final class PolicyTests: XCTestCase {
         XCTAssertEqual(original.1.makeData(), originalBytes)
     }
 
-    func testCloudReadBlockingDoesNotSuppressSendingOrSecretChatDecryption() {
+    func testReadBlockingDoesNotSuppressSendingOrSecretChatServiceTransport() {
         PatchClientPolicy.setEnabled(.blockCloudReads, true)
         XCTAssertTrue(PatchClientPolicy.shouldCompleteLocally("messages.readHistory"))
         XCTAssertTrue(PatchClientPolicy.shouldCompleteLocally("channels.readMessageContents"))
         XCTAssertFalse(PatchClientPolicy.shouldCompleteLocally("messages.sendMessage"))
-        XCTAssertFalse(PatchClientPolicy.shouldCompleteLocally("messages.readEncryptedHistory"))
+        XCTAssertTrue(PatchClientPolicy.shouldCompleteLocally("messages.readEncryptedHistory"))
         XCTAssertFalse(PatchClientPolicy.shouldCompleteLocally("messages.sendEncryptedService"))
     }
 
