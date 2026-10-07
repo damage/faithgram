@@ -1146,12 +1146,102 @@ index 0000000..2106db3
 +        present(alert)
 +    }
 +}
+diff --git a/submodules/SettingsUI/Sources/FaithgramSettingsBackupController.swift b/submodules/SettingsUI/Sources/FaithgramSettingsBackupController.swift
+new file mode 100644
+index 0000000..a470230
+--- /dev/null
++++ b/submodules/SettingsUI/Sources/FaithgramSettingsBackupController.swift
+@@ -0,0 +1,84 @@
++import Foundation
++import UIKit
++import UniformTypeIdentifiers
++import TelegramCore
++import AccountContext
++
++final class FaithgramSettingsBackupController: NSObject, UIDocumentPickerDelegate {
++    private let context: AccountContext
++    private var exportURL: URL?
++    init(context: AccountContext) { self.context = context }
++    deinit { cleanup() }
++    private func cleanup() { if let exportURL { try? FileManager.default.removeItem(at: exportURL.deletingLastPathComponent()); self.exportURL = nil } }
++    private func show(_ text: String) {
++        let alert = UIAlertController(title: "faithgram", message: FaithgramPreferences.interfaceText(text), preferredStyle: .alert)
++        alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("OK"), style: .default))
++        context.sharedContext.mainWindow?.presentNative(alert)
++    }
++    private func password(export: Bool, completion: @escaping (String) -> Void) {
++        let alert = UIAlertController(title: FaithgramPreferences.interfaceText(export ? "Encrypt settings backup" : "Open settings backup"), message: FaithgramPreferences.interfaceText(export ? "Choose a password of at least 12 characters. This backup includes Faithgram settings and chat rules. Sessions, badges, message archives and administrator credentials are excluded." : "Enter the backup password."), preferredStyle: .alert)
++        alert.addTextField { $0.isSecureTextEntry = true; $0.autocapitalizationType = .none; $0.autocorrectionType = .no }
++        if export { alert.addTextField { $0.placeholder = FaithgramPreferences.interfaceText("Repeat password"); $0.isSecureTextEntry = true } }
++        alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
++        alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText(export ? "Export" : "Open"), style: .default) { [weak self] _ in
++            let value = alert.textFields?.first?.text ?? ""
++            guard value.count >= 12, value.utf8.count <= 1024, !export || alert.textFields?.last?.text == value else { self?.show("Passwords must match and contain at least 12 characters."); return }
++            completion(value)
++        })
++        context.sharedContext.mainWindow?.presentNative(alert)
++    }
++    func exportSettings() {
++        password(export: true) { [weak self] password in
++            let backup = FaithgramSettingsBackup.capture()
++            DispatchQueue.global(qos: .userInitiated).async {
++                do {
++                    let data = try backup.encrypted(password: password)
++                    let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("faithgram-settings-" + UUID().uuidString).appendingPathComponent("faithgram-settings.fgs")
++                    try FaithgramVault.write(data, to: url)
++                    DispatchQueue.main.async {
++                        guard let self else { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()); return }
++                        self.cleanup()
++                        self.exportURL = url
++                        let picker: UIDocumentPickerViewController
++                        if #available(iOS 14.0, *) { picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true) }
++                        else { picker = UIDocumentPickerViewController(url: url, in: .exportToService) }
++                        picker.delegate = self
++                        self.context.sharedContext.mainWindow?.presentNative(picker)
++                    }
++                } catch { DispatchQueue.main.async { self?.show("Settings could not be exported. Check available storage.") } }
++            }
++        }
++    }
++    func importSettings() {
++        let picker: UIDocumentPickerViewController
++        if #available(iOS 14.0, *) { picker = UIDocumentPickerViewController(forOpeningContentTypes: [.data], asCopy: true) }
++        else { picker = UIDocumentPickerViewController(documentTypes: ["public.data"], in: .import) }
++        picker.delegate = self
++        context.sharedContext.mainWindow?.presentNative(picker)
++    }
++    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { cleanup() }
++    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
++        if exportURL != nil { cleanup(); return }
++        guard let url = urls.first else { return }
++        password(export: false) { [weak self] password in
++            DispatchQueue.global(qos: .userInitiated).async {
++                let access = url.startAccessingSecurityScopedResource()
++                defer { if access { url.stopAccessingSecurityScopedResource() } }
++                do {
++                    guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= 2 * 1024 * 1024 else { throw FaithgramVaultError.invalidFile }
++                    let backup = try FaithgramSettingsBackup.decrypt(Data(contentsOf: url), password: password)
++                    DispatchQueue.main.async { self?.confirm(backup) }
++                } catch { DispatchQueue.main.async { self?.show("Incorrect password or invalid settings backup. No settings were changed.") } }
++            }
++        }
++    }
++    private func confirm(_ backup: FaithgramSettingsBackup) {
++        let alert = UIAlertController(title: FaithgramPreferences.interfaceText("Restore settings"), message: FaithgramPreferences.interfaceText("Apply \(backup.values.count) saved settings? This changes local interface and privacy controls. Existing Telegram sessions and message archives are kept."), preferredStyle: .alert)
++        alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
++        alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Restore"), style: .default) { [weak self] _ in
++            do { try backup.apply(); self?.show("Settings restored.") }
++            catch { self?.show("This settings backup is invalid. No settings were changed.") }
++        })
++        context.sharedContext.mainWindow?.presentNative(alert)
++    }
++}
 diff --git a/submodules/SettingsUI/Sources/PatchClientSettingsController.swift b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
 new file mode 100644
-index 0000000..47dae5d
+index 0000000..6870689
 --- /dev/null
 +++ b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
-@@ -0,0 +1,367 @@
+@@ -0,0 +1,416 @@
 +import Foundation
 +import UIKit
 +import AsyncDisplayKit
@@ -1163,7 +1253,7 @@ index 0000000..47dae5d
 +import AccountContext
 +
 +private enum FaithgramCategory: String, CaseIterable {
-+    case accounts, messages, privacy, appearance, media, chats, notifications, badges, profile, balances, gifts, uniqueGifts, extraGifts, optimizations, diagnostics
++    case accounts, messages, privacy, gestures, settings, appearance, media, chats, notifications, badges, profile, balances, gifts, uniqueGifts, extraGifts, optimizations, diagnostics
 +    var title: String {
 +        switch self { case .uniqueGifts: return "Unique gifts"; case .extraGifts: return "Extra gifts"; default: return self.rawValue.capitalized }
 +    }
@@ -1172,6 +1262,8 @@ index 0000000..47dae5d
 +        case .accounts: return "person.crop.circle"
 +        case .messages: return "bubble.left.and.bubble.right"
 +        case .privacy: return "lock.shield"
++        case .gestures: return "hand.draw"
++        case .settings: return "gearshape"
 +        case .appearance: return "paintbrush"
 +        case .media: return "waveform"
 +        case .chats: return "folder"
@@ -1188,7 +1280,9 @@ index 0000000..47dae5d
 +        switch self {
 +        case .accounts: return [.unlimitedAccounts, .noPhoneException, .hideSelfPhone]
 +        case .messages: return [.saveDeletedMessages, .saveEditHistory, .regexFilters, .formattingPanel, .customFactCheck, .copyProtectedContent, .disableTTL, .showCallbackData, .disableSensitiveBlur, .moreRecentStickers, .openLinksWithoutWarning, .disableMediaSpoilers, .hideBlockedMessages]
-+        case .privacy: return [.alwaysOffline, .blockTyping, .blockCloudReads, .localDrafts, .hideAds, .hideProxyPromo]
++        case .privacy: return [.alwaysOffline, .blockTyping, .blockCloudReads, .localDrafts, .hideAds, .hideProxyPromo, .cleanLinks, .hideAppPreview]
++        case .gestures: return [.customGestures]
++        case .settings: return []
 +        case .appearance: return [.lowercaseInterface, .localPremium, .hideStories, .disableStoryCamera, .dynamicIsland]
 +        case .media: return [.localTranscription, .localTranslation, .archiveDownloadedMedia]
 +        case .chats: return [.hideAllChats, .foldersAtBottom, .rememberFolder]
@@ -1230,6 +1324,14 @@ index 0000000..47dae5d
 +    case channelMedia = "Save media from channels"
 +    case notifications = "Sounds and notification settings"
 +    case activityStatus = "Live Activity status"
++    case privacyProfiles = "Privacy profiles"
++    case savePrivacyProfile = "Save current controls as custom profile"
++    case undoPrivacyProfile = "Restore previous privacy controls"
++    case ghostChats = "Ghost mode in selected chats"
++    case gestureUp = "Three-finger swipe up"
++    case gestureDown = "Three-finger swipe down"
++    case exportSettings = "Export encrypted settings"
++    case restoreSettings = "Restore encrypted settings"
 +}
 +
 +private final class FaithgramToggle: UISwitch {
@@ -1250,6 +1352,7 @@ index 0000000..47dae5d
 +    private var observer: NSObjectProtocol?
 +    private let actionDisposable = MetaDisposable()
 +    private lazy var sessionBackup = FaithgramSessionBackupController(context: self.context)
++    private lazy var settingsBackup = FaithgramSettingsBackupController(context: self.context)
 +
 +    init(context: AccountContext, category: FaithgramCategory? = nil) {
 +        self.context = context
@@ -1328,8 +1431,11 @@ index 0000000..47dae5d
 +            if category == .extraGifts { self.rows.append(.action(.giftCatalog)) }
 +            if category == .privacy {
 +                self.rows.insert(.ghost, at: 0)
-+                self.rows += [.action(.lockNow), .action(.passcode)]
++                self.rows.insert(.action(.privacyProfiles), at: 0)
++                self.rows += [.action(.savePrivacyProfile), .action(.undoPrivacyProfile), .action(.ghostChats), .action(.lockNow), .action(.passcode)]
 +            }
++            if category == .gestures { self.rows += [.action(.gestureUp), .action(.gestureDown)] }
++            if category == .settings { self.rows += [.action(.exportSettings), .action(.restoreSettings)] }
 +            if category == .accounts { self.rows += [.action(.exportSessions), .action(.restoreSessions)] }
 +            if category == .appearance { self.rows += [.action(.activityStatus), .action(.theme), .action(.stickers)] }
 +            if category == .notifications { self.rows.append(.action(.notifications)) }
@@ -1410,6 +1516,10 @@ index 0000000..47dae5d
 +            cell.accessoryType = .disclosureIndicator
 +            if action == .exportSessions || action == .restoreSessions { cell.detailTextLabel?.text = FaithgramPreferences.interfaceText("Password-protected backup of active sessions") }
 +            if action == .activityStatus { cell.detailTextLabel?.text = FaithgramPreferences.text("activityStatus", fallback: "Check permissions and signing") }
++            if action == .privacyProfiles { cell.detailTextLabel?.text = FaithgramPrivacySettings.currentProfile }
++            if action == .ghostChats { cell.detailTextLabel?.text = FaithgramPreferences.interfaceText("Long-press a message to enable Ghost for that chat. Rules apply to matching chats in all local accounts. Online status is an account-wide control.") }
++            if action == .gestureUp || action == .gestureDown { cell.detailTextLabel?.text = FaithgramPreferences.interfaceText(gestureTitle(FaithgramPreferences.text(action == .gestureUp ? "gesture.up" : "gesture.down", fallback: action == .gestureUp ? "profiles" : "ghost"))) }
++            if action == .exportSettings || action == .restoreSettings { cell.detailTextLabel?.text = FaithgramPreferences.interfaceText("Password-protected Faithgram preferences and chat rules") }
 +        }
 +        return cell
 +    }
@@ -1460,6 +1570,26 @@ index 0000000..47dae5d
 +    }
 +    private func perform(_ action: FaithgramAction) {
 +        switch action {
++        case .exportSettings: settingsBackup.exportSettings()
++        case .restoreSettings: settingsBackup.importSettings()
++        case .privacyProfiles:
++            let alert = UIAlertController(title: FaithgramPreferences.interfaceText("Privacy profiles"), message: FaithgramPreferences.interfaceText("Standard turns these privacy controls off. Quiet hides your phone, ads, pinned and mention notifications, cleans links and conceals the app preview. Ghost also suppresses online status, reads, typing, upload indicators and cloud drafts. Chat-specific Ghost rules remain active."), preferredStyle: .alert)
++            for name in FaithgramPrivacySettings.profiles where name != "custom" || UserDefaults.standard.data(forKey: "faithgram.privacy.custom") != nil {
++                alert.addAction(UIAlertAction(title: name, style: .default) { _ in let _ = FaithgramPrivacySettings.applyProfile(name) })
++            }
++            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
++            context.sharedContext.mainWindow?.presentNative(alert)
++        case .savePrivacyProfile: FaithgramPrivacySettings.saveCustomProfile(); showInfo("Custom privacy profile saved.")
++        case .undoPrivacyProfile: showInfo(FaithgramPrivacySettings.restorePreviousProfile() ? "Previous privacy controls restored." : "No previous profile to restore.")
++        case .ghostChats: showInfo("Long-press a message and choose Ghost mode for this chat. The rule suppresses reads, typing and upload indicators for that peer across local accounts. Turning it off keeps global Ghost controls active. Telegram online status applies to the whole account.")
++        case .gestureUp, .gestureDown:
++            let key = action == .gestureUp ? "gesture.up" : "gesture.down"
++            let alert = UIAlertController(title: FaithgramPreferences.interfaceText(action.rawValue), message: FaithgramPreferences.interfaceText("Use three fingers outside text editors. Home Screen quick actions wait for the app to unlock."), preferredStyle: .alert)
++            for value in ["none", "profiles", "ghost", "lock", "cleanLinks"] {
++                alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText(gestureTitle(value)), style: .default) { _ in FaithgramPreferences.setText(key, value) })
++            }
++            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
++            context.sharedContext.mainWindow?.presentNative(alert)
 +        case .exportSessions: sessionBackup.exportSessions()
 +        case .restoreSessions: sessionBackup.importSessions()
 +        case .history: openSettingsPage(FaithgramHistoryController(context: context))
@@ -1514,6 +1644,15 @@ index 0000000..47dae5d
 +        }
 +    }
 +
++    private func gestureTitle(_ value: String) -> String {
++        switch value { case "profiles": return "Choose privacy profile"; case "ghost": return "Toggle Ghost mode"; case "lock": return "Lock app"; case "cleanLinks": return "Toggle link cleaning"; default: return "No action" }
++    }
++    private func showInfo(_ message: String) {
++        let alert = UIAlertController(title: "faithgram", message: FaithgramPreferences.interfaceText(message), preferredStyle: .alert)
++        alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("OK"), style: .default))
++        context.sharedContext.mainWindow?.presentNative(alert)
++    }
++
 +}
 +
 +public func patchClientSettingsController(context: AccountContext) -> ViewController {
@@ -1566,7 +1705,7 @@ index 7db5db9..4964faf 100644
              } else {
                  var data: TelegramMediaExpiredContentData
 diff --git a/submodules/TelegramCore/Sources/Network/Download.swift b/submodules/TelegramCore/Sources/Network/Download.swift
-index ab16e78..473b250 100644
+index ab16e78..f9d4a99 100644
 --- a/submodules/TelegramCore/Sources/Network/Download.swift
 +++ b/submodules/TelegramCore/Sources/Network/Download.swift
 @@ -148,9 +148,10 @@ class Download: NSObject, MTRequestMessageServiceDelegate {
@@ -1634,7 +1773,7 @@ index ab16e78..473b250 100644
      func request<T>(_ data: (FunctionDescription, Buffer, DeserializeFunctionResponse<T>), expectedResponseSize: Int32? = nil, automaticFloodWait: Bool = true, onFloodWaitError: ((String) -> Void)? = nil) -> Signal<T, MTRpcError> {
          return Signal { subscriber in
 +            // PatchClient: evaluate policy before creating a network request.
-+            if PatchClientPolicy.shouldCompleteLocally(data.0.name) {
++            if PatchClientPolicy.shouldCompleteLocally(data.0) {
 +                subscriber.putCompletion()
 +                return EmptyDisposable
 +            }
@@ -1662,7 +1801,7 @@ index ab16e78..473b250 100644
      func requestWithAdditionalData<T>(_ data: (FunctionDescription, Buffer, DeserializeFunctionResponse<T>), automaticFloodWait: Bool = true, onFloodWaitError: ((String) -> Void)? = nil, failOnServerErrors: Bool = false, expectedResponseSize: Int32? = nil) -> Signal<(T, Double), (MTRpcError, Double)> {
          return Signal { subscriber in
 +            // PatchClient: evaluate policy before creating a network request.
-+            if PatchClientPolicy.shouldCompleteLocally(data.0.name) {
++            if PatchClientPolicy.shouldCompleteLocally(data.0) {
 +                subscriber.putCompletion()
 +                return EmptyDisposable
 +            }
@@ -1690,7 +1829,7 @@ index ab16e78..473b250 100644
          let requestService = self.requestService
          return Signal { subscriber in
 +            // PatchClient: evaluate policy before creating a network request.
-+            if PatchClientPolicy.shouldCompleteLocally(data.0.name) {
++            if PatchClientPolicy.shouldCompleteLocally(data.0) {
 +                subscriber.putCompletion()
 +                return EmptyDisposable
 +            }
@@ -1742,7 +1881,7 @@ index 1f6b2e0..628ee3c 100644
      var isRandomAccessAllowed = true
      switch reference {
 diff --git a/submodules/TelegramCore/Sources/Network/Network.swift b/submodules/TelegramCore/Sources/Network/Network.swift
-index 5410e71..c2552ee 100644
+index 5410e71..f41224f 100644
 --- a/submodules/TelegramCore/Sources/Network/Network.swift
 +++ b/submodules/TelegramCore/Sources/Network/Network.swift
 @@ -1086,10 +1086,25 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
@@ -1750,7 +1889,7 @@ index 5410e71..c2552ee 100644
          let requestService = self.requestService
          return Signal { subscriber in
 +            // PatchClient: evaluate policy before creating a network request.
-+            if PatchClientPolicy.shouldCompleteLocally(data.0.name) {
++            if PatchClientPolicy.shouldCompleteLocally(data.0) {
 +                subscriber.putCompletion()
 +                return EmptyDisposable
 +            }
@@ -1786,7 +1925,7 @@ index 5410e71..c2552ee 100644
          let requestService = self.requestService
          return Signal { subscriber in
 +            // PatchClient: evaluate policy before creating a network request.
-+            if PatchClientPolicy.shouldCompleteLocally(data.0.name) {
++            if PatchClientPolicy.shouldCompleteLocally(data.0) {
 +                subscriber.putCompletion()
 +                return EmptyDisposable
 +            }
@@ -2442,6 +2581,61 @@ index 0000000..7062abb
 +        }.sorted { ($0.deletedAt ?? $0.revisions.last?.capturedAt ?? .distantPast) > ($1.deletedAt ?? $1.revisions.last?.capturedAt ?? .distantPast) }
 +    }
 +}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramLinkCleaner.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramLinkCleaner.swift
+new file mode 100644
+index 0000000..f473aca
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramLinkCleaner.swift
+@@ -0,0 +1,49 @@
++import Foundation
++
++public enum FaithgramLinkCleaner {
++    public struct Edit {
++        public let range: NSRange
++        public let replacement: String
++    }
++    public static func edits(in text: String, excluding: [NSRange] = []) -> [Edit] {
++        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return [] }
++        let value = text as NSString
++        return detector.matches(in: text, range: NSRange(location: 0, length: value.length)).compactMap { match in
++            guard !excluding.contains(where: { NSIntersectionRange($0, match.range).length > 0 }) else { return nil }
++            let original = value.substring(with: match.range)
++            let replacement = cleanURL(original)
++            return replacement == original ? nil : Edit(range: match.range, replacement: replacement)
++        }
++    }
++    public static func remap(_ range: NSRange, through edits: [Edit]) -> NSRange {
++        func boundary(_ offset: Int) -> Int {
++            var delta = 0
++            for edit in edits {
++                if offset < edit.range.location { break }
++                let end = NSMaxRange(edit.range)
++                let length = (edit.replacement as NSString).length
++                if offset < end { return edit.range.location + delta + min(offset - edit.range.location, length) }
++                delta += length - edit.range.length
++            }
++            return offset + delta
++        }
++        let start = boundary(range.location)
++        return NSRange(location: start, length: max(0, boundary(NSMaxRange(range)) - start))
++    }
++    private static let tracking: Set<String> = ["fbclid", "gclid", "dclid", "msclkid", "mc_cid", "mc_eid", "igshid", "yclid", "_ga", "_gl", "vero_id", "wickedid", "oly_anon_id", "oly_enc_id"]
++    public static func cleanURL(_ text: String) -> String {
++        guard var url = URLComponents(string: text), let scheme = url.scheme?.lowercased(), ["https", "http"].contains(scheme), url.host != nil, let items = url.queryItems else { return text }
++        // Signed download and payment URLs depend on their original query string.
++        let signed = Set(items.map { $0.name.lowercased() })
++        if !signed.isDisjoint(with: ["sig", "signature", "x-amz-signature", "x-goog-signature", "token", "auth", "hmac"]) { return text }
++        let kept = items.filter { !tracking.contains($0.name.lowercased()) && !$0.name.lowercased().hasPrefix("utm_") }
++        guard kept.count != items.count else { return text }
++        url.queryItems = kept.isEmpty ? nil : kept
++        return url.string ?? text
++    }
++    public static func clean(_ text: NSAttributedString) -> NSAttributedString {
++        let result = NSMutableAttributedString(attributedString: text)
++        for edit in edits(in: text.string).reversed() { result.replaceCharacters(in: edit.range, with: edit.replacement) }
++        return result
++    }
++}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramLocalGiftTransfers.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramLocalGiftTransfers.swift
 new file mode 100644
 index 0000000..6051539
@@ -2715,6 +2909,46 @@ index 0000000..b15c83e
 +        }
 +    }
 +}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramOutgoingLinks.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramOutgoingLinks.swift
+new file mode 100644
+index 0000000..636651e
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramOutgoingLinks.swift
+@@ -0,0 +1,34 @@
++import Foundation
++import Postbox
++
++func faithgramCleanOutgoingLinks(text: String, attributes: [MessageAttribute]) -> (String, [MessageAttribute]) {
++    guard PatchClientPolicy.isEnabled(.cleanLinks) else { return (text, attributes) }
++    let entities = attributes.compactMap { $0 as? TextEntitiesMessageAttribute }.flatMap { $0.entities }
++    let excluded = entities.compactMap { entity -> NSRange? in
++        switch entity.type {
++        case .Code, .Pre: return NSRange(location: entity.range.lowerBound, length: entity.range.count)
++        default: return nil
++        }
++    }
++    let edits = FaithgramLinkCleaner.edits(in: text, excluding: excluded)
++    let result = NSMutableString(string: text)
++    for edit in edits.reversed() { result.replaceCharacters(in: edit.range, with: edit.replacement) }
++    let updated = attributes.map { attribute -> MessageAttribute in
++        if let attribute = attribute as? TextEntitiesMessageAttribute {
++            return TextEntitiesMessageAttribute(entities: attribute.entities.compactMap { entity in
++                guard entity.range.lowerBound >= 0, entity.range.upperBound <= (text as NSString).length else { return nil }
++                let range = FaithgramLinkCleaner.remap(NSRange(location: entity.range.lowerBound, length: entity.range.count), through: edits)
++                guard range.length > 0 else { return nil }
++                let type: MessageTextEntityType
++                if case let .TextUrl(url) = entity.type { type = .TextUrl(url: FaithgramLinkCleaner.cleanURL(url)) }
++                else { type = entity.type }
++                return MessageTextEntity(range: range.location ..< NSMaxRange(range), type: type)
++            })
++        }
++        if let attribute = attribute as? RichTextMessageAttribute {
++            return RichTextMessageAttribute(instantPage: faithgramCleanRichPage(attribute.instantPage), fullInstantPage: attribute.fullInstantPage.map(faithgramCleanRichPage))
++        }
++        return attribute
++    }
++    return (result as String, updated)
++}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramPeerPresentation.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramPeerPresentation.swift
 new file mode 100644
 index 0000000..2ead6e9
@@ -2956,6 +3190,103 @@ index 0000000..86cfa97
 +        return false
 +    }
 +}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramPrivacyPeers.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramPrivacyPeers.swift
+new file mode 100644
+index 0000000..a8b34e4
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramPrivacyPeers.swift
+@@ -0,0 +1,7 @@
++import Postbox
++
++public extension FaithgramPrivacySettings {
++    static func suppressesRead(peerId: PeerId) -> Bool { return suppressesRead(namespace: peerId.namespace._internalGetInt32Value(), id: peerId.id._internalGetInt64Value()) }
++    static func isGhostChat(peerId: PeerId) -> Bool { return isGhostChat(namespace: peerId.namespace._internalGetInt32Value(), id: peerId.id._internalGetInt64Value()) }
++    static func setGhostChat(peerId: PeerId, enabled: Bool) { setGhostChat(namespace: peerId.namespace._internalGetInt32Value(), id: peerId.id._internalGetInt64Value(), enabled: enabled) }
++}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramPrivacySettings.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramPrivacySettings.swift
+new file mode 100644
+index 0000000..07fcc50
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramPrivacySettings.swift
+@@ -0,0 +1,78 @@
++import Foundation
++import TelegramApi
++
++public enum FaithgramPrivacySettings {
++    public static let options: [PatchClientOption] = [.alwaysOffline, .blockCloudReads, .blockTyping, .localDrafts, .hideSelfPhone, .hideAds, .hideProxyPromo, .hidePinnedNotifications, .hideMentionNotifications, .cleanLinks, .hideAppPreview]
++    public static let profiles = ["standard", "quiet", "ghost", "custom"]
++    private static let defaults = UserDefaults.standard
++
++    private static func values(_ profile: String) -> [String: Bool]? {
++        if profile == "custom", let data = defaults.data(forKey: "faithgram.privacy.custom") { return try? JSONDecoder().decode([String: Bool].self, from: data) }
++        guard profiles.prefix(3).contains(profile) else { return nil }
++        let quiet: Set<PatchClientOption> = [.hideSelfPhone, .hideAds, .hideProxyPromo, .hidePinnedNotifications, .hideMentionNotifications, .cleanLinks, .hideAppPreview]
++        return Dictionary(uniqueKeysWithValues: options.map { option in
++            (option.rawValue, profile == "ghost" || (profile == "quiet" && quiet.contains(option)))
++        })
++    }
++    public static var currentProfile: String {
++        for name in profiles {
++            if let values = values(name), options.allSatisfy({ values[$0.rawValue] == PatchClientPolicy.isEnabled($0) }) { return name }
++        }
++        return "modified"
++    }
++    public static func saveCustomProfile() {
++        let value = Dictionary(uniqueKeysWithValues: options.map { ($0.rawValue, PatchClientPolicy.isEnabled($0)) })
++        defaults.set(try? JSONEncoder().encode(value), forKey: "faithgram.privacy.custom")
++        NotificationCenter.default.post(name: FaithgramPreferences.changed, object: nil)
++    }
++    @discardableResult public static func applyProfile(_ name: String) -> Bool {
++        guard let value = values(name), Set(value.keys) == Set(options.map { $0.rawValue }) else { return false }
++        let previous = Dictionary(uniqueKeysWithValues: options.map { ($0.rawValue, PatchClientPolicy.isEnabled($0)) })
++        defaults.set(try? JSONEncoder().encode(previous), forKey: "faithgram.privacy.previous")
++        for option in options { PatchClientPolicy.setEnabled(option, value[option.rawValue] == true) }
++        return true
++    }
++    public static func restorePreviousProfile() -> Bool {
++        guard let data = defaults.data(forKey: "faithgram.privacy.previous"), let values = try? JSONDecoder().decode([String: Bool].self, from: data), Set(values.keys) == Set(options.map { $0.rawValue }) else { return false }
++        for option in options { if let value = values[option.rawValue] { PatchClientPolicy.setEnabled(option, value) } }
++        defaults.removeObject(forKey: "faithgram.privacy.previous")
++        return true
++    }
++
++    public static func peerKey(namespace: Int32, id: Int64) -> String { return "\(namespace):\(id)" }
++    public static var ghostChats: Set<String> {
++        return Set(defaults.stringArray(forKey: "faithgram.privacy.ghostChats") ?? [])
++    }
++    public static func isGhostChat(namespace: Int32, id: Int64) -> Bool { return ghostChats.contains(peerKey(namespace: namespace, id: id)) }
++    public static func setGhostChat(namespace: Int32, id: Int64, enabled: Bool) {
++        guard (0...3).contains(namespace), id > 0 || (namespace == 3 && id != 0 && Int32(exactly: id) != nil) else { return }
++        var values = ghostChats
++        let key = peerKey(namespace: namespace, id: id)
++        if enabled { values.insert(key) } else { values.remove(key) }
++        defaults.set(values.sorted(), forKey: "faithgram.privacy.ghostChats")
++        NotificationCenter.default.post(name: FaithgramPreferences.changed, object: nil)
++    }
++    public static func suppressesRead(namespace: Int32, id: Int64) -> Bool {
++        return PatchClientPolicy.isEnabled(.blockCloudReads) || isGhostChat(namespace: namespace, id: id)
++    }
++    static func suppresses(_ description: FunctionDescription) -> Bool {
++        let methods: Set<String> = ["messages.setTyping", "messages.setEncryptedTyping", "messages.readHistory", "channels.readHistory", "messages.readMessageContents", "channels.readMessageContents", "messages.readDiscussion", "messages.readMentions", "messages.readReactions", "messages.readPollVotes", "messages.readEncryptedHistory", "stories.readStories", "stories.incrementStoryViews"]
++        guard methods.contains(description.name) else { return false }
++        for (name, parameter) in description.parameters where name == "peer" || name == "channel" {
++            guard let constructor = parameter.value as? TypeConstructorDescription else { continue }
++            let (type, fields) = constructor.descriptionFields()
++            let namespace: Int32
++            let field: String
++            if type.contains("User") { namespace = 0; field = "userId" }
++            else if type.contains("Channel") { namespace = 2; field = "channelId" }
++            else if type.contains("EncryptedChat") { namespace = 3; field = "chatId" }
++            else if type.contains("Chat") { namespace = 1; field = "chatId" }
++            else { continue }
++            if let value = fields.first(where: { $0.0 == field })?.1.value {
++                let id = (value as? Int64) ?? (value as? Int32).map(Int64.init)
++                if let id, isGhostChat(namespace: namespace, id: id) { return true }
++            }
++        }
++        return false
++    }
++}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramProtocolLog.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramProtocolLog.swift
 new file mode 100644
 index 0000000..d0fd566
@@ -3060,23 +3391,23 @@ index 0000000..d0fd566
 +}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramRichTranslation.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramRichTranslation.swift
 new file mode 100644
-index 0000000..04dbca4
+index 0000000..786c023
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramRichTranslation.swift
-@@ -0,0 +1,114 @@
+@@ -0,0 +1,119 @@
 +import Foundation
 +import Postbox
 +import SwiftSignalKit
 +
-+private func mapFaithgramRichText(_ text: RichText, transform: (String) -> String) -> RichText {
-+    func map(_ text: RichText) -> RichText { mapFaithgramRichText(text, transform: transform) }
++private func mapFaithgramRichText(_ text: RichText, cleanLinks: Bool = false, transform: (String) -> String) -> RichText {
++    func map(_ text: RichText) -> RichText { mapFaithgramRichText(text, cleanLinks: cleanLinks, transform: transform) }
 +    switch text {
 +    case let .plain(value): return .plain(transform(value))
 +    case let .bold(value): return .bold(map(value))
 +    case let .italic(value): return .italic(map(value))
 +    case let .underline(value): return .underline(map(value))
 +    case let .strikethrough(value): return .strikethrough(map(value))
-+    case let .url(text, url, id): return .url(text: map(text), url: url, webpageId: id)
++    case let .url(text, url, id): return .url(text: map(text), url: cleanLinks ? FaithgramLinkCleaner.cleanURL(url) : url, webpageId: id)
 +    case let .concat(values): return .concat(values.map(map))
 +    case let .subscript(value): return .subscript(map(value))
 +    case let .superscript(value): return .superscript(map(value))
@@ -3087,10 +3418,10 @@ index 0000000..04dbca4
 +    }
 +}
 +
-+private func mapFaithgramBlocks(_ blocks: [InstantPageBlock], transform: (String) -> String) -> [InstantPageBlock] {
-+    func text(_ value: RichText) -> RichText { mapFaithgramRichText(value, transform: transform) }
-+    func children(_ value: [InstantPageBlock]) -> [InstantPageBlock] { mapFaithgramBlocks(value, transform: transform) }
-+    func caption(_ value: InstantPageCaption) -> InstantPageCaption { InstantPageCaption(text: text(value.text), credit: value.credit) }
++private func mapFaithgramBlocks(_ blocks: [InstantPageBlock], cleanLinks: Bool = false, transform: (String) -> String) -> [InstantPageBlock] {
++    func text(_ value: RichText) -> RichText { mapFaithgramRichText(value, cleanLinks: cleanLinks, transform: transform) }
++    func children(_ value: [InstantPageBlock]) -> [InstantPageBlock] { mapFaithgramBlocks(value, cleanLinks: cleanLinks, transform: transform) }
++    func caption(_ value: InstantPageCaption) -> InstantPageCaption { InstantPageCaption(text: text(value.text), credit: cleanLinks ? text(value.credit) : value.credit) }
 +    return blocks.map { block in
 +        switch block {
 +        case let .title(value): return .title(text(value))
@@ -3112,12 +3443,12 @@ index 0000000..04dbca4
 +            }, ordered: ordered)
 +        case let .blockQuote(blocks, value, collapsed): return .blockQuote(blocks: children(blocks), caption: text(value), collapsed: collapsed)
 +        case let .pullQuote(value, label): return .pullQuote(text: text(value), caption: text(label))
-+        case let .image(id, value, url, page, spoiler): return .image(id: id, caption: caption(value), url: url, webpageId: page, spoiler: spoiler)
++        case let .image(id, value, url, page, spoiler): return .image(id: id, caption: caption(value), url: cleanLinks ? url.map(FaithgramLinkCleaner.cleanURL) : url, webpageId: page, spoiler: spoiler)
 +        case let .video(id, value, autoplay, loop, spoiler): return .video(id: id, caption: caption(value), autoplay: autoplay, loop: loop, spoiler: spoiler)
 +        case let .audio(id, value): return .audio(id: id, caption: caption(value))
 +        case let .cover(value): return .cover(children([value])[0])
-+        case let .webEmbed(url, html, size, value, stretch, scrolling, cover): return .webEmbed(url: url, html: html, dimensions: size, caption: caption(value), stretchToWidth: stretch, allowScrolling: scrolling, coverId: cover)
-+        case let .postEmbed(url, page, avatar, author, date, blocks, value): return .postEmbed(url: url, webpageId: page, avatarId: avatar, author: author, date: date, blocks: children(blocks), caption: caption(value))
++        case let .webEmbed(url, html, size, value, stretch, scrolling, cover): return .webEmbed(url: cleanLinks ? url.map(FaithgramLinkCleaner.cleanURL) : url, html: html, dimensions: size, caption: caption(value), stretchToWidth: stretch, allowScrolling: scrolling, coverId: cover)
++        case let .postEmbed(url, page, avatar, author, date, blocks, value): return .postEmbed(url: cleanLinks ? FaithgramLinkCleaner.cleanURL(url) : url, webpageId: page, avatarId: avatar, author: author, date: date, blocks: children(blocks), caption: caption(value))
 +        case let .collage(items, value): return .collage(items: children(items), caption: caption(value))
 +        case let .slideshow(items, value): return .slideshow(items: children(items), caption: caption(value))
 +        case let .table(title, rows, bordered, striped):
@@ -3132,6 +3463,11 @@ index 0000000..04dbca4
 +        default: return block
 +        }
 +    }
++}
++
++func faithgramCleanRichPage(_ page: InstantPage) -> InstantPage {
++    let blocks = mapFaithgramBlocks(page.blocks, cleanLinks: true) { FaithgramLinkCleaner.clean(NSAttributedString(string: $0)).string }
++    return InstantPage(blocks: blocks, media: page.media, isComplete: page.isComplete, rtl: page.rtl, url: page.url, views: page.views)
 +}
 +
 +func faithgramTranslateRichMessages(account: Account, messageIds: [EngineMessage.Id], toLang: String) -> Signal<[EngineMessage.Id: InstantPage], TranslationError> {
@@ -3224,6 +3560,85 @@ index 0000000..b28246c
 +        return backup
 +    }
 +}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramSettingsBackup.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramSettingsBackup.swift
+new file mode 100644
+index 0000000..30cf59f
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramSettingsBackup.swift
+@@ -0,0 +1,73 @@
++import Foundation
++
++public struct FaithgramSettingsBackup: Codable {
++    public enum Value: Codable { case flag(Bool), text(String), bytes(Data), strings([String]) }
++    public let version: Int
++    public let createdAt: Date
++    public let values: [String: Value]
++    private static var textKeys: Set<String> {
++        let fields = FaithgramVisualPreferences.profileFields + FaithgramVisualPreferences.balanceFields + FaithgramVisualPreferences.regularGiftFields + FaithgramVisualPreferences.uniqueGiftFields + FaithgramVisualPreferences.hiddenGiftFields
++        return Set(["deletedMark", "editedMark", "regexRules", "factCheckText", "translationTarget", "gesture.up", "gesture.down"].map { "faithgram." + $0 } + fields.map { "faithgram.visual." + $0.key })
++    }
++    private static let binaryKeys: Set<String> = ["faithgram.mediaRules", "faithgram.privacy.custom", "faithgram.privacy.previous"]
++    private static var flagKeys: Set<String> { Set(PatchClientOption.allCases.map { "patchclient.option." + $0.rawValue }) }
++    public static func capture(defaults: UserDefaults = .standard) -> Self {
++        var values: [String: Value] = [:]
++        for key in flagKeys { values[key] = .flag(defaults.bool(forKey: key)) }
++        for key in textKeys { if let value = defaults.string(forKey: key) { values[key] = .text(value) } }
++        for key in binaryKeys { if let value = defaults.data(forKey: key) { values[key] = .bytes(value) } }
++        if let value = defaults.stringArray(forKey: "faithgram.privacy.ghostChats") { values["faithgram.privacy.ghostChats"] = .strings(value) }
++        return Self(version: 1, createdAt: Date(), values: values)
++    }
++    public func validate() throws {
++        guard version == 1, values.count <= 256 else { throw FaithgramVaultError.invalidFile }
++        for (key, value) in values {
++            switch value {
++            case .flag: guard Self.flagKeys.contains(key) else { throw FaithgramVaultError.invalidFile }
++            case let .text(text):
++                guard Self.textKeys.contains(key), text.utf8.count <= 32768 else { throw FaithgramVaultError.invalidFile }
++                if key == "faithgram.regexRules" { let _ = try FaithgramMessageFilter.compile(text) }
++                if key.hasPrefix("faithgram.gesture.") { guard ["none", "profiles", "ghost", "lock", "cleanLinks"].contains(text) else { throw FaithgramVaultError.invalidFile } }
++            case let .bytes(data):
++                guard Self.binaryKeys.contains(key), data.count <= 512 * 1024 else { throw FaithgramVaultError.invalidFile }
++                if key == "faithgram.mediaRules" { let _ = try JSONDecoder().decode([String: Bool].self, from: data) }
++                else {
++                    let profile = try JSONDecoder().decode([String: Bool].self, from: data)
++                    guard Set(profile.keys) == Set(FaithgramPrivacySettings.options.map { $0.rawValue }) else { throw FaithgramVaultError.invalidFile }
++                }
++            case let .strings(strings):
++                guard key == "faithgram.privacy.ghostChats", strings.count <= 10000 else { throw FaithgramVaultError.invalidFile }
++                for text in strings {
++                    let parts = text.split(separator: ":")
++                    guard parts.count == 2, let ns = Int32(parts[0]), (0...3).contains(ns), let id = Int64(parts[1]), id > 0 || (ns == 3 && id != 0 && Int32(exactly: id) != nil) else { throw FaithgramVaultError.invalidFile }
++                }
++            }
++        }
++    }
++    public func encrypted(password: String) throws -> Data {
++        try validate()
++        let data = try JSONEncoder().encode(self)
++        guard data.count <= 1024 * 1024 else { throw FaithgramVaultError.invalidFile }
++        return try FaithgramVault.encryptBackup(data, password: password, format: "faithgram.settings")
++    }
++    public static func decrypt(_ data: Data, password: String) throws -> Self {
++        let plaintext = try FaithgramVault.decryptBackup(data, password: password, format: "faithgram.settings")
++        guard plaintext.count <= 1024 * 1024 else { throw FaithgramVaultError.invalidFile }
++        let backup = try JSONDecoder().decode(Self.self, from: plaintext)
++        try backup.validate()
++        return backup
++    }
++    public func apply(defaults: UserDefaults = .standard) throws {
++        try validate()
++        for key in Self.flagKeys.union(Self.textKeys).union(Self.binaryKeys).union(["faithgram.privacy.ghostChats"]) { defaults.removeObject(forKey: key) }
++        for (key, value) in values {
++            switch value {
++            case let .flag(value): defaults.set(value, forKey: key)
++            case let .text(value): defaults.set(value, forKey: key)
++            case let .bytes(value): defaults.set(value, forKey: key)
++            case let .strings(value): defaults.set(value, forKey: key)
++            }
++        }
++        NotificationCenter.default.post(name: FaithgramPreferences.changed, object: nil)
++    }
++}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramSettingsSignal.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramSettingsSignal.swift
 new file mode 100644
 index 0000000..9565e04
@@ -3242,10 +3657,10 @@ index 0000000..9565e04
 +}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramVault.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramVault.swift
 new file mode 100644
-index 0000000..b373e2f
+index 0000000..66ff02f
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramVault.swift
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,92 @@
 +import Foundation
 +import CryptoKit
 +import Security
@@ -3308,18 +3723,19 @@ index 0000000..b373e2f
 +        guard status == kCCSuccess else { throw FaithgramVaultError.invalidKey }
 +        return Data(derived)
 +    }
-+    public static func encryptBackup(_ data: Data, password: String) throws -> Data {
++    public static func encryptBackup(_ data: Data, password: String, format: String = "faithgram.sessions") throws -> Data {
++        guard ["faithgram.sessions", "faithgram.settings"].contains(format) else { throw FaithgramVaultError.invalidFile }
 +        guard data.count <= 10 * 1024 * 1024 else { throw FaithgramVaultError.invalidFile }
 +        let salt = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
 +        let key = try passwordKey(password, salt: salt)
-+        let sealed = try seal(data, key: key, context: "faithgram.sessions.v1")
-+        return try JSONEncoder().encode(Envelope(format: "faithgram.sessions", version: 1, salt: salt, rounds: rounds, sealed: sealed))
++        let sealed = try seal(data, key: key, context: format + ".v1")
++        return try JSONEncoder().encode(Envelope(format: format, version: 1, salt: salt, rounds: rounds, sealed: sealed))
 +    }
-+    public static func decryptBackup(_ data: Data, password: String) throws -> Data {
++    public static func decryptBackup(_ data: Data, password: String, format: String = "faithgram.sessions") throws -> Data {
 +        guard data.count <= 16 * 1024 * 1024 else { throw FaithgramVaultError.invalidFile }
 +        let file = try JSONDecoder().decode(Envelope.self, from: data)
-+        guard file.format == "faithgram.sessions", file.version == 1, file.rounds == rounds, file.salt.count == 32 else { throw FaithgramVaultError.invalidFile }
-+        return try open(file.sealed, key: passwordKey(password, salt: file.salt), context: "faithgram.sessions.v1")
++        guard ["faithgram.sessions", "faithgram.settings"].contains(format), file.format == format, file.version == 1, file.rounds == rounds, file.salt.count == 32 else { throw FaithgramVaultError.invalidFile }
++        return try open(file.sealed, key: passwordKey(password, salt: file.salt), context: format + ".v1")
 +    }
 +
 +    public static func write(_ data: Data, to url: URL) throws {
@@ -3471,10 +3887,10 @@ index 0000000..7398fa9
 +}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/PatchClientPolicy.swift b/submodules/TelegramCore/Sources/PatchClient/PatchClientPolicy.swift
 new file mode 100644
-index 0000000..9c9fa30
+index 0000000..3109a68
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/PatchClient/PatchClientPolicy.swift
-@@ -0,0 +1,262 @@
+@@ -0,0 +1,275 @@
 +import Foundation
 +import TelegramApi
 +
@@ -3529,6 +3945,9 @@ index 0000000..9c9fa30
 +    case fakeGiftTransfer
 +    case showHiddenGifts
 +    case protocolLogger
++    case cleanLinks
++    case hideAppPreview
++    case customGestures
 +
 +    public var title: String {
 +        switch self {
@@ -3582,6 +4001,9 @@ index 0000000..9c9fa30
 +        case .fakeGiftTransfer: return "Local gift transfers"
 +        case .showHiddenGifts: return "Extra gifts in catalog"
 +        case .protocolLogger: return "Decoded MTProto log"
++        case .cleanLinks: return "Clean tracking links before sending"
++        case .hideAppPreview: return "Hide app switcher preview"
++        case .customGestures: return "Custom three-finger gestures"
 +
 +        }
 +    }
@@ -3613,6 +4035,9 @@ index 0000000..9c9fa30
 +        case .fakeGiftTransfer: return "Create a local transfer preview. Nothing is sent; previews disappear on restart."
 +        case .showHiddenGifts: return "Add configured gift ids to the local purchase catalog."
 +        case .protocolLogger: return "Keep an encrypted request and response log on this device. Includes sensitive message and account data."
++        case .cleanLinks: return "Remove known tracking parameters from outgoing links. Signed URLs retain their original query."
++        case .hideAppPreview: return "Cover the app when it becomes inactive, including its app switcher snapshot."
++        case .customGestures: return "Assign quick actions to three-finger up and down swipes. Normal chat gestures stay available."
 +        case .alwaysOffline:
 +            return "Sends offline status updates. Sending messages can still reveal activity."
 +        case .blockTyping:
@@ -3699,7 +4124,7 @@ index 0000000..9c9fa30
 +        case "messages.readHistory", "channels.readHistory",
 +             "messages.readMessageContents", "channels.readMessageContents",
 +             "messages.readDiscussion", "messages.readMentions",
-+             "messages.readReactions", "messages.readPollVotes", "messages.readEncryptedHistory":
++             "messages.readReactions", "messages.readPollVotes", "messages.readEncryptedHistory", "stories.readStories", "stories.incrementStoryViews":
 +            return isEnabled(.blockCloudReads)
 +        case "messages.translateText", "messages.translateRichMessage", "messages.composeMessageWithAI", "messages.composeRichMessageWithAI":
 +            return isEnabled(.localTranslation)
@@ -3710,6 +4135,10 @@ index 0000000..9c9fa30
 +        default:
 +            return false
 +        }
++    }
++
++    static func shouldCompleteLocally(_ description: FunctionDescription) -> Bool {
++        return shouldCompleteLocally(description.name) || FaithgramPrivacySettings.suppresses(description)
 +    }
 +
 +    static func payload(for description: FunctionDescription, original: Buffer) -> Data {
@@ -3775,6 +4204,38 @@ index 0000000..0068029
 +        return container
 +    }
 +}
+diff --git a/submodules/TelegramCore/Sources/PendingMessages/EnqueueMessage.swift b/submodules/TelegramCore/Sources/PendingMessages/EnqueueMessage.swift
+index 6cf628f..f22dd71 100644
+--- a/submodules/TelegramCore/Sources/PendingMessages/EnqueueMessage.swift
++++ b/submodules/TelegramCore/Sources/PendingMessages/EnqueueMessage.swift
+@@ -423,7 +423,7 @@ private func generateEphemeralOutgoingRandomId() -> Int64 {
+ }
+ 
+ private func enqueueEphemeralOutgoingMessage(transaction: Transaction, account: Account, peerId: PeerId, transformedMedia: Bool, message: EnqueueMessage, botPeerId: PeerId) -> MessageId? {
+-    guard case let .message(text, requestedAttributes, inlineStickers, mediaReference, threadId, replyToMessageId, _, _, correlationId, bubbleUpEmojiOrStickersets) = message else {
++    guard case let .message(originalText, requestedAttributes, inlineStickers, mediaReference, threadId, replyToMessageId, _, _, correlationId, bubbleUpEmojiOrStickersets) = message else {
+         return nil
+     }
+     guard transaction.getPeer(peerId).flatMap(apiInputPeer) != nil, transaction.getPeer(botPeerId).flatMap(apiInputUser) != nil else {
+@@ -449,6 +449,8 @@ private func enqueueEphemeralOutgoingMessage(transaction: Transaction, account:
+     }
+ 
+     var attributes: [MessageAttribute] = filterMessageAttributesForEphemeralOutgoingMessage(requestedAttributes)
++    let (text, cleanedAttributes) = faithgramCleanOutgoingLinks(text: originalText, attributes: attributes)
++    attributes = cleanedAttributes
+     attributes.append(OutgoingMessageInfoAttribute(uniqueId: randomId, flags: infoFlags, acknowledged: false, correlationId: correlationId, bubbleUpEmojiOrStickersets: bubbleUpEmojiOrStickersets, partialReference: partialReference))
+     attributes.append(EphemeralOutgoingMessageAttribute(botPeerId: botPeerId, randomId: randomId, state: .sending))
+ 
+@@ -800,7 +802,8 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
+             globallyUniqueIds.append(randomId)
+             
+             switch message {
+-                case let .message(text, requestedAttributes, inlineStickers, mediaReference, threadId, replyToMessageId, replyToStoryId, localGroupingKey, _, _):
++                case let .message(inputText, inputAttributes, inlineStickers, mediaReference, threadId, replyToMessageId, replyToStoryId, localGroupingKey, _, _):
++                    let (text, requestedAttributes) = faithgramCleanOutgoingLinks(text: inputText, attributes: inputAttributes)
+                     for (_, file) in inlineStickers {
+                         transaction.storeMediaIfNotPresent(media: file)
+                     }
 diff --git a/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift b/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift
 index 58db6c7..42f93df 100644
 --- a/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift
@@ -3876,6 +4337,18 @@ index d4c9113..d01b0d2 100644
                      }
                  }, completed: {
                      completed()
+diff --git a/submodules/TelegramCore/Sources/State/AccountViewTracker.swift b/submodules/TelegramCore/Sources/State/AccountViewTracker.swift
+index 6d238e3..df0d1c0 100644
+--- a/submodules/TelegramCore/Sources/State/AccountViewTracker.swift
++++ b/submodules/TelegramCore/Sources/State/AccountViewTracker.swift
+@@ -711,6 +711,7 @@ public final class AccountViewTracker {
+             }
+             if !addedMessageIds.isEmpty {
+                 for (peerId, messageIds) in messagesIdsGroupedByPeerId(Set(addedMessageIds)) {
++                    if FaithgramPrivacySettings.suppressesRead(peerId: peerId) { continue }
+                     let disposableId = self.nextUpdatedViewCountDisposableId
+                     self.nextUpdatedViewCountDisposableId += 1
+                     
 diff --git a/submodules/TelegramCore/Sources/State/ApplyUpdateMessage.swift b/submodules/TelegramCore/Sources/State/ApplyUpdateMessage.swift
 index da84933..4a12fd9 100644
 --- a/submodules/TelegramCore/Sources/State/ApplyUpdateMessage.swift
@@ -3934,6 +4407,26 @@ index f40bad0..23243e3 100644
                          if message.id.peerId.namespace == Namespaces.Peer.SecretChat || isRemove {
                              _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: [entry.messageId])
                          } else {
+diff --git a/submodules/TelegramCore/Sources/State/ManagedConsumePersonalMessagesActions.swift b/submodules/TelegramCore/Sources/State/ManagedConsumePersonalMessagesActions.swift
+index b532676..7e535d0 100644
+--- a/submodules/TelegramCore/Sources/State/ManagedConsumePersonalMessagesActions.swift
++++ b/submodules/TelegramCore/Sources/State/ManagedConsumePersonalMessagesActions.swift
+@@ -252,6 +252,7 @@ func managedReadReactionOrPollVoteActions(postbox: Postbox, network: Network, st
+ }
+ 
+ private func synchronizeConsumeMessageContents(transaction: Transaction, postbox: Postbox, network: Network, stateManager: AccountStateManager, id: MessageId) -> Signal<Void, NoError> {
++    if FaithgramPrivacySettings.suppressesRead(peerId: id.peerId) { return .complete() }
+     if id.peerId.namespace == Namespaces.Peer.CloudUser || id.peerId.namespace == Namespaces.Peer.CloudGroup {
+         return network.request(Api.functions.messages.readMessageContents(id: [id.id]))
+             |> map(Optional.init)
+@@ -321,6 +322,7 @@ private func synchronizeConsumeMessageContents(transaction: Transaction, postbox
+ }
+ 
+ private func synchronizeReadMessageReactionsOrPollVotes(transaction: Transaction, postbox: Postbox, network: Network, stateManager: AccountStateManager, id: MessageId) -> Signal<Void, NoError> {
++    if FaithgramPrivacySettings.suppressesRead(peerId: id.peerId) { return .complete() }
+     if id.peerId.namespace == Namespaces.Peer.CloudUser || id.peerId.namespace == Namespaces.Peer.CloudGroup {
+         return network.request(Api.functions.messages.readMessageContents(id: [id.id]))
+         |> map(Optional.init)
 diff --git a/submodules/TelegramCore/Sources/State/ManagedRecentStickers.swift b/submodules/TelegramCore/Sources/State/ManagedRecentStickers.swift
 index 8b0b65b..ed37934 100644
 --- a/submodules/TelegramCore/Sources/State/ManagedRecentStickers.swift
@@ -3956,6 +4449,21 @@ index 8b0b65b..ed37934 100644
                      }
                  } else {
                      return .complete()
+diff --git a/submodules/TelegramCore/Sources/State/ManagedSecretChatOutgoingOperations.swift b/submodules/TelegramCore/Sources/State/ManagedSecretChatOutgoingOperations.swift
+index 5e2cdf1..5d318dc 100644
+--- a/submodules/TelegramCore/Sources/State/ManagedSecretChatOutgoingOperations.swift
++++ b/submodules/TelegramCore/Sources/State/ManagedSecretChatOutgoingOperations.swift
+@@ -160,6 +160,10 @@ func managedSecretChatOutgoingOperations(auxiliaryMethods: AccountAuxiliaryMetho
+                                 case let .noop(layer, actionGloballyUniqueId):
+                                     return sendServiceActionMessage(postbox: postbox, network: network, peerId: entry.peerId, action: .noop(layer: layer, actionGloballyUniqueId: actionGloballyUniqueId), tagLocalIndex: entry.tagLocalIndex, wasDelivered: operation.delivered)
+                                 case let .readMessagesContent(layer, actionGloballyUniqueId, globallyUniqueIds):
++                                    if FaithgramPrivacySettings.suppressesRead(peerId: entry.peerId) {
++                                        guard let sequenceLayer = SecretChatSequenceBasedLayer(rawValue: layer.rawValue) else { return .complete() }
++                                        return sendServiceActionMessage(postbox: postbox, network: network, peerId: entry.peerId, action: .noop(layer: sequenceLayer, actionGloballyUniqueId: actionGloballyUniqueId), tagLocalIndex: entry.tagLocalIndex, wasDelivered: operation.delivered)
++                                    }
+                                     return sendServiceActionMessage(postbox: postbox, network: network, peerId: entry.peerId, action: .readMessageContents(layer: layer, actionGloballyUniqueId: actionGloballyUniqueId, globallyUniqueIds: globallyUniqueIds), tagLocalIndex: entry.tagLocalIndex, wasDelivered: operation.delivered)
+                                 case let .setMessageAutoremoveTimeout(layer, actionGloballyUniqueId, timeout, messageId):
+                                     return sendServiceActionMessage(postbox: postbox, network: network, peerId: entry.peerId, action: .setMessageAutoremoveTimeout(layer: layer, actionGloballyUniqueId: actionGloballyUniqueId, timeout: timeout, messageId: messageId), tagLocalIndex: entry.tagLocalIndex, wasDelivered: operation.delivered)
 diff --git a/submodules/TelegramCore/Sources/State/ManagedServiceViews.swift b/submodules/TelegramCore/Sources/State/ManagedServiceViews.swift
 index d7471d4..7ff13aa 100644
 --- a/submodules/TelegramCore/Sources/State/ManagedServiceViews.swift
@@ -3969,6 +4477,18 @@ index d7471d4..7ff13aa 100644
      
      let managedHoles = managedMessageHistoryHoles(accountPeerId: accountPeerId, network: network, postbox: postbox)
      
+diff --git a/submodules/TelegramCore/Sources/State/ManagedSynchronizeConsumeMessageContentsOperations.swift b/submodules/TelegramCore/Sources/State/ManagedSynchronizeConsumeMessageContentsOperations.swift
+index f6df475..a82359f 100644
+--- a/submodules/TelegramCore/Sources/State/ManagedSynchronizeConsumeMessageContentsOperations.swift
++++ b/submodules/TelegramCore/Sources/State/ManagedSynchronizeConsumeMessageContentsOperations.swift
+@@ -110,6 +110,7 @@ func managedSynchronizeConsumeMessageContentOperations(postbox: Postbox, network
+ }
+ 
+ private func synchronizeConsumeMessageContents(transaction: Transaction, network: Network, stateManager: AccountStateManager, peerId: PeerId, operation: SynchronizeConsumeMessageContentsOperation) -> Signal<Void, NoError> {
++    if FaithgramPrivacySettings.suppressesRead(peerId: peerId) { return .complete() }
+     if peerId.namespace == Namespaces.Peer.CloudUser || peerId.namespace == Namespaces.Peer.CloudGroup {
+         return network.request(Api.functions.messages.readMessageContents(id: operation.messageIds.map { $0.id }))
+         |> map(Optional.init)
 diff --git a/submodules/TelegramCore/Sources/State/RestoreFetchedDrafts.swift b/submodules/TelegramCore/Sources/State/RestoreFetchedDrafts.swift
 index 66ee81f..7ef94e9 100644
 --- a/submodules/TelegramCore/Sources/State/RestoreFetchedDrafts.swift
@@ -4085,7 +4605,7 @@ index 65104f0..786b021 100644
      
      public static func ==(lhs: PeerReactionSettings, rhs: PeerReactionSettings) -> Bool {
 diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Messages/MarkMessageContentAsConsumedInteractively.swift b/submodules/TelegramCore/Sources/TelegramEngine/Messages/MarkMessageContentAsConsumedInteractively.swift
-index 43408c1..9244a18 100644
+index 43408c1..54d1fde 100644
 --- a/submodules/TelegramCore/Sources/TelegramEngine/Messages/MarkMessageContentAsConsumedInteractively.swift
 +++ b/submodules/TelegramCore/Sources/TelegramEngine/Messages/MarkMessageContentAsConsumedInteractively.swift
 @@ -16,7 +16,7 @@ func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messa
@@ -4093,7 +4613,7 @@ index 43408c1..9244a18 100644
                          
                          if message.id.peerId.namespace == Namespaces.Peer.SecretChat {
 -                            if let state = transaction.getPeerChatState(message.id.peerId) as? SecretChatState {
-+                            if !PatchClientPolicy.isEnabled(.blockCloudReads), let state = transaction.getPeerChatState(message.id.peerId) as? SecretChatState {
++                            if !FaithgramPrivacySettings.suppressesRead(peerId: message.id.peerId), let state = transaction.getPeerChatState(message.id.peerId) as? SecretChatState {
                                  var layer: SecretChatLayer?
                                  switch state.embeddedState {
                                      case .terminated, .handshake:
@@ -4102,7 +4622,7 @@ index 43408c1..9244a18 100644
                              }
                              
 -                            if let state = state, let layer = layer, let globallyUniqueId = message.globallyUniqueId {
-+                            if !PatchClientPolicy.isEnabled(.blockCloudReads), let state = state, let layer = layer, let globallyUniqueId = message.globallyUniqueId {
++                            if !FaithgramPrivacySettings.suppressesRead(peerId: message.id.peerId), let state = state, let layer = layer, let globallyUniqueId = message.globallyUniqueId {
                                  let updatedState = addSecretChatOutgoingOperation(transaction: transaction, peerId: messageId.peerId, operation: .readMessagesContent(layer: layer, actionGloballyUniqueId: Int64.random(in: Int64.min ... Int64.max), globallyUniqueIds: [globallyUniqueId]), state: state)
                                  if updatedState != state {
                                      transaction.setPeerChatState(messageId.peerId, state: updatedState)
@@ -4111,7 +4631,7 @@ index 43408c1..9244a18 100644
                              }
                              
 -                            if let state = state, let layer = layer, let globallyUniqueId = message.globallyUniqueId {
-+                            if !PatchClientPolicy.isEnabled(.blockCloudReads), let state = state, let layer = layer, let globallyUniqueId = message.globallyUniqueId {
++                            if !FaithgramPrivacySettings.suppressesRead(peerId: message.id.peerId), let state = state, let layer = layer, let globallyUniqueId = message.globallyUniqueId {
                                  let updatedState = addSecretChatOutgoingOperation(transaction: transaction, peerId: messageId.peerId, operation: .readMessagesContent(layer: layer, actionGloballyUniqueId: Int64.random(in: Int64.min ... Int64.max), globallyUniqueIds: [globallyUniqueId]), state: state)
                                  if updatedState != state {
                                      transaction.setPeerChatState(messageId.peerId, state: updatedState)
@@ -5629,7 +6149,7 @@ index 4d971fd..27c8ddb 100644
              if isPremium {
                  return .single(AudioTranscription.TrialState(cooldownUntilTime: nil, remainingCount: 1))
 diff --git a/submodules/TelegramUI/Sources/AppDelegate.swift b/submodules/TelegramUI/Sources/AppDelegate.swift
-index b1ea96b..344d36c 100644
+index b1ea96b..dec6fd7 100644
 --- a/submodules/TelegramUI/Sources/AppDelegate.swift
 +++ b/submodules/TelegramUI/Sources/AppDelegate.swift
 @@ -290,7 +290,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
@@ -5678,6 +6198,15 @@ index b1ea96b..344d36c 100644
          var isDebugConfiguration = false
          #if DEBUG
          isDebugConfiguration = true
+@@ -1500,7 +1511,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+                 if items.isEmpty {
+                     UIApplication.shared.shortcutItems = nil
+                 } else {
+-                    UIApplication.shared.shortcutItems = items.map({ $0.shortcutItem() })
++                    UIApplication.shared.shortcutItems = FaithgramPrivacyUI.shortcutItems(existing: items.map({ $0.shortcutItem() }))
+                 }
+             }))
+         }
 @@ -1540,13 +1551,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
          
          self.maybeCheckForUpdates()
@@ -5693,7 +6222,15 @@ index b1ea96b..344d36c 100644
          
          if #available(iOS 13.0, *) {
              let cleanupTaskId = "\(baseAppBundleId).cleanup"
-@@ -1924,6 +1929,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+@@ -1897,6 +1902,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+     }
+ 
+     func applicationWillResignActive(_ application: UIApplication) {
++        FaithgramPrivacyUI.shared.hidePreview(window: self.window)
+         self.isActiveValue = false
+         self.isActivePromise.set(false)
+         self.clearNotificationsManager?.commitNow()
+@@ -1924,6 +1930,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
      }
  
      func applicationDidEnterBackground(_ application: UIApplication) {
@@ -5702,15 +6239,67 @@ index b1ea96b..344d36c 100644
          let _ = (self.sharedContextPromise.get()
          |> take(1)
          |> deliverOnMainQueue).start(next: { sharedApplicationContext in
-@@ -2003,6 +2010,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+@@ -2003,6 +2011,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
      }
  
      func applicationDidBecomeActive(_ application: UIApplication) {
++        FaithgramPrivacyUI.shared.configure(window: self.window, action: { [weak self] in self?.performFaithgramAction($0) })
 +        if #available(iOS 16.2, *) { FaithgramActivityManager.shared.setActive(true) }
 +        FaithgramBadgeService.shared.setForeground(true)
          self.isInForegroundValue = true
          self.isInForegroundPromise.set(true)
          self.isActiveValue = true
+@@ -2712,6 +2723,11 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+     
+     @available(iOS 9.0, *)
+     func application(_ application: UIApplication, performActionFor shortcutItem: UIApplicationShortcutItem, completionHandler: @escaping (Bool) -> Void) {
++        if shortcutItem.type.hasPrefix("faithgram.") {
++            performFaithgramAction(String(shortcutItem.type.dropFirst("faithgram.".count)), waitForUnlock: true)
++            completionHandler(true)
++            return
++        }
+         let _ = (self.sharedContextPromise.get()
+         |> take(1)
+         |> deliverOnMainQueue).start(next: { sharedContext in
+@@ -2754,6 +2770,38 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+         })
+     }
+     
++    private func performFaithgramAction(_ action: String, waitForUnlock: Bool = false) {
++        let _ = (self.authorizedContext() |> take(1) |> deliverOnMainQueue).start(next: { authorized in
++        let context = authorized.context
++        let perform: () -> Void = {
++            switch action {
++            case "ghost": FaithgramPreferences.setGhostMode(!FaithgramPreferences.ghostMode)
++            case "cleanLinks": PatchClientPolicy.setEnabled(.cleanLinks, !PatchClientPolicy.isEnabled(.cleanLinks))
++            case "lock":
++                let _ = (context.sharedContext.accountManager.transaction { $0.getAccessChallengeData() } |> deliverOnMainQueue).start(next: { challenge in
++                    if case .none = challenge {
++                        let alert = UIAlertController(title: "faithgram", message: FaithgramPreferences.interfaceText("Set a passcode in Faithgram privacy settings before using the lock gesture."), preferredStyle: .alert)
++                        alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("OK"), style: .default))
++                        context.sharedContext.mainWindow?.presentNative(alert)
++                    } else { context.sharedContext.appLockContext.lock() }
++                })
++            case "profiles":
++                let alert = UIAlertController(title: "faithgram", message: FaithgramPreferences.interfaceText("Privacy profile: ") + FaithgramPrivacySettings.currentProfile, preferredStyle: .alert)
++                for name in FaithgramPrivacySettings.profiles where name != "custom" || UserDefaults.standard.data(forKey: "faithgram.privacy.custom") != nil {
++                    alert.addAction(UIAlertAction(title: name, style: .default) { _ in let _ = FaithgramPrivacySettings.applyProfile(name) })
++                }
++                alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
++                context.sharedContext.mainWindow?.presentNative(alert)
++            default: break
++            }
++        }
++        if let lock = context.sharedContext.appLockContext as? AppLockContextImpl {
++            let state = waitForUnlock ? (lock.isCurrentlyLocked |> filter { !$0 } |> take(1)) : (lock.isCurrentlyLocked |> take(1))
++            let _ = (state |> deliverOnMainQueue).start(next: { locked in if !locked { perform() } })
++        } else { perform() }
++        })
++    }
++
+     private func openNotificationSettingsWhenReady() {
+         let _ = (self.authorizedContext()
+         |> take(1)
 diff --git a/submodules/TelegramUI/Sources/ChatControllerOpenMessageReactionContextMenu.swift b/submodules/TelegramUI/Sources/ChatControllerOpenMessageReactionContextMenu.swift
 index 3f47be5..aba2781 100644
 --- a/submodules/TelegramUI/Sources/ChatControllerOpenMessageReactionContextMenu.swift
@@ -5791,7 +6380,7 @@ index b547dd3..4c3cea8 100644
                      let rawSuffix = "-raw"
                      if languageCode.hasSuffix(rawSuffix) {
 diff --git a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
-index 07cef5b..c6efcf1 100644
+index 07cef5b..e9dc90d 100644
 --- a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
 +++ b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
 @@ -268,7 +268,7 @@ private func canViewReadStats(message: EngineRawMessage, participantCount: Int?,
@@ -5803,10 +6392,17 @@ index 07cef5b..c6efcf1 100644
              let premiumConfiguration = PremiumConfiguration.with(appConfiguration: appConfig)
              if premiumConfiguration.isPremiumDisabled {
                  return false
-@@ -963,6 +963,26 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
+@@ -963,6 +963,33 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
          let isPremium = accountPeer?.isPremium ?? false
  
          var actions: [ContextMenuItem] = []
++        let chatGhost = FaithgramPrivacySettings.isGhostChat(peerId: message.id.peerId)
++        actions.append(.action(ContextMenuActionItem(text: FaithgramPreferences.interfaceText(chatGhost ? "Disable Ghost for this chat" : "Enable Ghost for this chat"), icon: { theme in
++            UIImage(systemName: "eye.slash")?.withTintColor(theme.contextMenu.primaryColor, renderingMode: .alwaysOriginal)
++        }, action: { _, completion in
++            FaithgramPrivacySettings.setGhostChat(peerId: message.id.peerId, enabled: !chatGhost)
++            completion(.default)
++        })))
 +        if message.id.namespace == Namespaces.Message.Cloud, message.id.peerId.namespace != Namespaces.Peer.SecretChat {
 +            if PatchClientPolicy.isEnabled(.saveEditHistory) || PatchClientPolicy.isEnabled(.saveDeletedMessages) {
 +                actions.append(.action(ContextMenuActionItem(text: FaithgramPreferences.interfaceText("Message history"), icon: { theme in
@@ -5925,6 +6521,89 @@ index 0000000..7eaaa9f
 +    private func finished() {
 +        updating = false
 +        if pending { pending = false; refresh() }
++    }
++}
+diff --git a/submodules/TelegramUI/Sources/FaithgramPrivacyUI.swift b/submodules/TelegramUI/Sources/FaithgramPrivacyUI.swift
+new file mode 100644
+index 0000000..c40e6c9
+--- /dev/null
++++ b/submodules/TelegramUI/Sources/FaithgramPrivacyUI.swift
+@@ -0,0 +1,77 @@
++import Foundation
++import UIKit
++import TelegramCore
++
++final class FaithgramPrivacyUI: NSObject, UIGestureRecognizerDelegate {
++    static let shared = FaithgramPrivacyUI()
++    private weak var window: UIWindow?
++    private var cover: UIView?
++    private var recognizers: [UISwipeGestureRecognizer] = []
++    private var action: ((String) -> Void)?
++    private var observer: NSObjectProtocol?
++    private override init() {
++        super.init()
++        observer = NotificationCenter.default.addObserver(forName: FaithgramPreferences.changed, object: nil, queue: .main) { [weak self] _ in
++            guard let self else { return }
++            if UIApplication.shared.applicationState != .active { self.hidePreview(window: self.window) }
++            UIApplication.shared.shortcutItems = Self.shortcutItems(existing: UIApplication.shared.shortcutItems ?? [])
++        }
++    }
++    deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
++    static func shortcutItems(existing: [UIApplicationShortcutItem]) -> [UIApplicationShortcutItem] {
++        let original = existing.filter { !$0.type.hasPrefix("faithgram.") }
++        guard PatchClientPolicy.isEnabled(.customGestures) else { return original }
++        let items = [UIApplicationShortcutItem(type: "faithgram.profiles", localizedTitle: FaithgramPreferences.interfaceText("Privacy profiles"), localizedSubtitle: nil, icon: UIApplicationShortcutIcon(type: .task), userInfo: nil), UIApplicationShortcutItem(type: "faithgram.ghost", localizedTitle: FaithgramPreferences.interfaceText("Toggle Ghost mode"), localizedSubtitle: nil, icon: UIApplicationShortcutIcon(type: .prohibit), userInfo: nil)]
++        return Array((items + original).prefix(4))
++    }
++    func configure(window: UIWindow?, action: @escaping (String) -> Void) {
++        self.action = action
++        if self.window !== window {
++            if let previous = self.window { recognizers.forEach { previous.removeGestureRecognizer($0) } }
++            self.window = window
++            recognizers = []
++            let directions: [UISwipeGestureRecognizer.Direction] = [.up, .down]
++            for direction in directions {
++                let recognizer = UISwipeGestureRecognizer(target: self, action: #selector(swiped(_:)))
++                recognizer.direction = direction
++                recognizer.numberOfTouchesRequired = 3
++                recognizer.cancelsTouchesInView = false
++                recognizer.delegate = self
++                window?.addGestureRecognizer(recognizer)
++                recognizers.append(recognizer)
++            }
++        }
++        showPreview()
++    }
++    func hidePreview(window: UIWindow?) {
++        guard PatchClientPolicy.isEnabled(.hideAppPreview), let window else { showPreview(); return }
++        if let cover { window.bringSubviewToFront(cover); return }
++        let view = UIView(frame: window.bounds)
++        view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
++        view.backgroundColor = .black
++        let icon = UIImageView(image: Bundle.main.path(forResource: "FaithgramIcon", ofType: "png").flatMap { UIImage(contentsOfFile: $0) })
++        icon.frame = CGRect(x: (view.bounds.width - 72) / 2, y: (view.bounds.height - 72) / 2, width: 72, height: 72)
++        icon.autoresizingMask = [.flexibleLeftMargin, .flexibleRightMargin, .flexibleTopMargin, .flexibleBottomMargin]
++        view.addSubview(icon)
++        window.addSubview(view)
++        cover = view
++    }
++    func showPreview() { cover?.removeFromSuperview(); cover = nil }
++    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
++        guard PatchClientPolicy.isEnabled(.customGestures), UIApplication.shared.applicationState == .active else { return false }
++        var target = touch.view
++        while let view = target {
++            if view is UITextInput { return false }
++            target = view.superview
++        }
++        return true
++    }
++    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { return true }
++    @objc private func swiped(_ recognizer: UISwipeGestureRecognizer) {
++        guard recognizer.state == .ended, PatchClientPolicy.isEnabled(.customGestures) else { return }
++        let direction = recognizer.direction == .up ? "up" : "down"
++        let fallback = direction == "up" ? "profiles" : "ghost"
++        let value = FaithgramPreferences.text("gesture." + direction, fallback: fallback)
++        if value != "none" { action?(value) }
 +    }
 +}
 diff --git a/submodules/TelegramUI/Sources/SharedAccountContext.swift b/submodules/TelegramUI/Sources/SharedAccountContext.swift

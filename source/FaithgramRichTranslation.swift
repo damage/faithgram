@@ -2,15 +2,15 @@ import Foundation
 import Postbox
 import SwiftSignalKit
 
-private func mapFaithgramRichText(_ text: RichText, transform: (String) -> String) -> RichText {
-    func map(_ text: RichText) -> RichText { mapFaithgramRichText(text, transform: transform) }
+private func mapFaithgramRichText(_ text: RichText, cleanLinks: Bool = false, transform: (String) -> String) -> RichText {
+    func map(_ text: RichText) -> RichText { mapFaithgramRichText(text, cleanLinks: cleanLinks, transform: transform) }
     switch text {
     case let .plain(value): return .plain(transform(value))
     case let .bold(value): return .bold(map(value))
     case let .italic(value): return .italic(map(value))
     case let .underline(value): return .underline(map(value))
     case let .strikethrough(value): return .strikethrough(map(value))
-    case let .url(text, url, id): return .url(text: map(text), url: url, webpageId: id)
+    case let .url(text, url, id): return .url(text: map(text), url: cleanLinks ? FaithgramLinkCleaner.cleanURL(url) : url, webpageId: id)
     case let .concat(values): return .concat(values.map(map))
     case let .subscript(value): return .subscript(map(value))
     case let .superscript(value): return .superscript(map(value))
@@ -21,10 +21,10 @@ private func mapFaithgramRichText(_ text: RichText, transform: (String) -> Strin
     }
 }
 
-private func mapFaithgramBlocks(_ blocks: [InstantPageBlock], transform: (String) -> String) -> [InstantPageBlock] {
-    func text(_ value: RichText) -> RichText { mapFaithgramRichText(value, transform: transform) }
-    func children(_ value: [InstantPageBlock]) -> [InstantPageBlock] { mapFaithgramBlocks(value, transform: transform) }
-    func caption(_ value: InstantPageCaption) -> InstantPageCaption { InstantPageCaption(text: text(value.text), credit: value.credit) }
+private func mapFaithgramBlocks(_ blocks: [InstantPageBlock], cleanLinks: Bool = false, transform: (String) -> String) -> [InstantPageBlock] {
+    func text(_ value: RichText) -> RichText { mapFaithgramRichText(value, cleanLinks: cleanLinks, transform: transform) }
+    func children(_ value: [InstantPageBlock]) -> [InstantPageBlock] { mapFaithgramBlocks(value, cleanLinks: cleanLinks, transform: transform) }
+    func caption(_ value: InstantPageCaption) -> InstantPageCaption { InstantPageCaption(text: text(value.text), credit: cleanLinks ? text(value.credit) : value.credit) }
     return blocks.map { block in
         switch block {
         case let .title(value): return .title(text(value))
@@ -46,12 +46,12 @@ private func mapFaithgramBlocks(_ blocks: [InstantPageBlock], transform: (String
             }, ordered: ordered)
         case let .blockQuote(blocks, value, collapsed): return .blockQuote(blocks: children(blocks), caption: text(value), collapsed: collapsed)
         case let .pullQuote(value, label): return .pullQuote(text: text(value), caption: text(label))
-        case let .image(id, value, url, page, spoiler): return .image(id: id, caption: caption(value), url: url, webpageId: page, spoiler: spoiler)
+        case let .image(id, value, url, page, spoiler): return .image(id: id, caption: caption(value), url: cleanLinks ? url.map(FaithgramLinkCleaner.cleanURL) : url, webpageId: page, spoiler: spoiler)
         case let .video(id, value, autoplay, loop, spoiler): return .video(id: id, caption: caption(value), autoplay: autoplay, loop: loop, spoiler: spoiler)
         case let .audio(id, value): return .audio(id: id, caption: caption(value))
         case let .cover(value): return .cover(children([value])[0])
-        case let .webEmbed(url, html, size, value, stretch, scrolling, cover): return .webEmbed(url: url, html: html, dimensions: size, caption: caption(value), stretchToWidth: stretch, allowScrolling: scrolling, coverId: cover)
-        case let .postEmbed(url, page, avatar, author, date, blocks, value): return .postEmbed(url: url, webpageId: page, avatarId: avatar, author: author, date: date, blocks: children(blocks), caption: caption(value))
+        case let .webEmbed(url, html, size, value, stretch, scrolling, cover): return .webEmbed(url: cleanLinks ? url.map(FaithgramLinkCleaner.cleanURL) : url, html: html, dimensions: size, caption: caption(value), stretchToWidth: stretch, allowScrolling: scrolling, coverId: cover)
+        case let .postEmbed(url, page, avatar, author, date, blocks, value): return .postEmbed(url: cleanLinks ? FaithgramLinkCleaner.cleanURL(url) : url, webpageId: page, avatarId: avatar, author: author, date: date, blocks: children(blocks), caption: caption(value))
         case let .collage(items, value): return .collage(items: children(items), caption: caption(value))
         case let .slideshow(items, value): return .slideshow(items: children(items), caption: caption(value))
         case let .table(title, rows, bordered, striped):
@@ -66,6 +66,11 @@ private func mapFaithgramBlocks(_ blocks: [InstantPageBlock], transform: (String
         default: return block
         }
     }
+}
+
+func faithgramCleanRichPage(_ page: InstantPage) -> InstantPage {
+    let blocks = mapFaithgramBlocks(page.blocks, cleanLinks: true) { FaithgramLinkCleaner.clean(NSAttributedString(string: $0)).string }
+    return InstantPage(blocks: blocks, media: page.media, isComplete: page.isComplete, rtl: page.rtl, url: page.url, views: page.views)
 }
 
 func faithgramTranslateRichMessages(account: Account, messageIds: [EngineMessage.Id], toLang: String) -> Signal<[EngineMessage.Id: InstantPage], TranslationError> {

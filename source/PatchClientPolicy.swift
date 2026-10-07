@@ -52,6 +52,9 @@ public enum PatchClientOption: String, CaseIterable {
     case fakeGiftTransfer
     case showHiddenGifts
     case protocolLogger
+    case cleanLinks
+    case hideAppPreview
+    case customGestures
 
     public var title: String {
         switch self {
@@ -105,6 +108,9 @@ public enum PatchClientOption: String, CaseIterable {
         case .fakeGiftTransfer: return "Local gift transfers"
         case .showHiddenGifts: return "Extra gifts in catalog"
         case .protocolLogger: return "Decoded MTProto log"
+        case .cleanLinks: return "Clean tracking links before sending"
+        case .hideAppPreview: return "Hide app switcher preview"
+        case .customGestures: return "Custom three-finger gestures"
 
         }
     }
@@ -136,6 +142,9 @@ public enum PatchClientOption: String, CaseIterable {
         case .fakeGiftTransfer: return "Create a local transfer preview. Nothing is sent; previews disappear on restart."
         case .showHiddenGifts: return "Add configured gift ids to the local purchase catalog."
         case .protocolLogger: return "Keep an encrypted request and response log on this device. Includes sensitive message and account data."
+        case .cleanLinks: return "Remove known tracking parameters from outgoing links. Signed URLs retain their original query."
+        case .hideAppPreview: return "Cover the app when it becomes inactive, including its app switcher snapshot."
+        case .customGestures: return "Assign quick actions to three-finger up and down swipes. Normal chat gestures stay available."
         case .alwaysOffline:
             return "Sends offline status updates. Sending messages can still reveal activity."
         case .blockTyping:
@@ -222,7 +231,7 @@ public enum PatchClientPolicy {
         case "messages.readHistory", "channels.readHistory",
              "messages.readMessageContents", "channels.readMessageContents",
              "messages.readDiscussion", "messages.readMentions",
-             "messages.readReactions", "messages.readPollVotes", "messages.readEncryptedHistory":
+             "messages.readReactions", "messages.readPollVotes", "messages.readEncryptedHistory", "stories.readStories", "stories.incrementStoryViews":
             return isEnabled(.blockCloudReads)
         case "messages.translateText", "messages.translateRichMessage", "messages.composeMessageWithAI", "messages.composeRichMessageWithAI":
             return isEnabled(.localTranslation)
@@ -233,6 +242,10 @@ public enum PatchClientPolicy {
         default:
             return false
         }
+    }
+
+    static func shouldCompleteLocally(_ description: FunctionDescription) -> Bool {
+        return shouldCompleteLocally(description.name) || FaithgramPrivacySettings.suppresses(description)
     }
 
     static func payload(for description: FunctionDescription, original: Buffer) -> Data {

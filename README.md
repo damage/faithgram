@@ -40,13 +40,25 @@ Only the active account with peer id 1000 can open the badge administration scre
 
 The registry refreshes in the foreground. A verified cache remains usable for up to seven days offline, so revocation is visible after a client refreshes. See the service README for deployment and credentials.
 
+## Privacy, gestures and settings
+
+Privacy profiles group the activity, read, draft, phone, advertising, notification, link-cleaning and app-preview controls. Standard turns these controls off; Quiet enables local privacy and clutter controls; Ghost enables all of them. Save the current controls as Custom, or restore the controls used immediately before the last profile change. Profiles leave appearance, archives, accounts and chat-specific rules intact.
+
+Long-press a message to toggle Ghost for that chat. The rule suppresses read receipts, story-view reports, typing, recording and upload indicators for the selected peer. Rules apply to matching peer ids across all local accounts. Global controls remain effective when a chat rule is disabled. Online presence belongs to the whole Telegram account and cannot be hidden independently for one chat. Secret-chat read-content actions use an encrypted no-op to preserve service sequence numbers; legacy layer 8 has no sequence counter and the receipt is completed locally.
+
+Link cleaning runs when normal outgoing messages and media captions enter the send queue, including hidden text links and rich-message links. It removes known tracking parameters such as `utm_*`, `fbclid` and `gclid`, preserves other parameters and fragments, and leaves signed URLs and code entities unchanged. Forwarded server messages keep their original contents. This is parameter cleanup, not protection from the destination website.
+
+The app-preview switch covers the app window when it becomes inactive. It conceals the app-switcher thumbnail; it does not disable screenshots or screen recording.
+
+Gestures settings enable three-finger swipes outside text editors. Assign each direction to the privacy-profile picker, Ghost toggle, lock, link-cleaning toggle, or no action. The same switch adds privacy and Ghost shortcuts to the Home Screen icon. Quick actions wait for the app to unlock. A lock gesture requires an existing app passcode.
+
+Settings exports use a separate `faithgram.settings` envelope, AES-GCM and PBKDF2-HMAC-SHA256 with 600,000 rounds. Import validates every field before replacing the allowed Faithgram preferences. The backup includes profiles, chat rules, gestures and local display preferences; it excludes Telegram sessions, badge records, admin credentials and message archives. Sessions have their own export in Accounts.
+
 ## Status
 
-Current changes fix category alignment, add owner-only badge administration and tappable badge explanations, replace welcome-screen branding, and add Live Activity status and restart controls. Their full iPhone build is pending. The badge service passed seven local tests covering authorization, signed snapshots, persistence, multiple roles, expiry and revocation.
+[Build 15](https://github.com/damage/faithgram/actions/runs/37676783408) passed the full Xcode 26.2 iPhone build, 38 Swift tests, syntax checks for 110 modified Swift files and the generated Objective-C lowercase test. It includes the badge and branding fixes, Live Activity diagnostics, privacy profiles, chat-specific Ghost rules, outgoing link cleanup, app-preview cover, gestures and encrypted settings backup.
 
-[Build 11](https://github.com/damage/faithgram/actions/runs/37643635225) passed the full Xcode 26.2 iPhone build, 21 Swift tests, syntax checks for 96 modified Swift files, and the generated Objective-C lowercase test. The unsigned IPA includes the Faithgram icon and Live Activity extension. The complete workflow took 9 minutes 46 seconds with the dependency cache.
-
-Build 11 has not been tested on an iPhone. The owner previously confirmed installation with Sideloadly and app launch on iOS 26.6.1 for build 5; that startup result does not validate the new functions. Runtime checks are still needed for ghost mode traffic, archives, translation, badges and UI layout.
+The unsigned IPA contains the Faithgram Live Activity extension. Current UI and network behavior still require device testing. The owner previously confirmed Sideloadly installation and app launch on iOS 26.6.1 for build 5; that does not validate later changes. Global badge synchronization is waiting for a server address and deployment configuration. The badge service passed seven local tests.
 
 ## Build
 

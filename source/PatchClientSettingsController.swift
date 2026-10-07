@@ -9,7 +9,7 @@ import TelegramPresentationData
 import AccountContext
 
 private enum FaithgramCategory: String, CaseIterable {
-    case accounts, messages, privacy, appearance, media, chats, notifications, badges, profile, balances, gifts, uniqueGifts, extraGifts, optimizations, diagnostics
+    case accounts, messages, privacy, gestures, settings, appearance, media, chats, notifications, badges, profile, balances, gifts, uniqueGifts, extraGifts, optimizations, diagnostics
     var title: String {
         switch self { case .uniqueGifts: return "Unique gifts"; case .extraGifts: return "Extra gifts"; default: return self.rawValue.capitalized }
     }
@@ -18,6 +18,8 @@ private enum FaithgramCategory: String, CaseIterable {
         case .accounts: return "person.crop.circle"
         case .messages: return "bubble.left.and.bubble.right"
         case .privacy: return "lock.shield"
+        case .gestures: return "hand.draw"
+        case .settings: return "gearshape"
         case .appearance: return "paintbrush"
         case .media: return "waveform"
         case .chats: return "folder"
@@ -34,7 +36,9 @@ private enum FaithgramCategory: String, CaseIterable {
         switch self {
         case .accounts: return [.unlimitedAccounts, .noPhoneException, .hideSelfPhone]
         case .messages: return [.saveDeletedMessages, .saveEditHistory, .regexFilters, .formattingPanel, .customFactCheck, .copyProtectedContent, .disableTTL, .showCallbackData, .disableSensitiveBlur, .moreRecentStickers, .openLinksWithoutWarning, .disableMediaSpoilers, .hideBlockedMessages]
-        case .privacy: return [.alwaysOffline, .blockTyping, .blockCloudReads, .localDrafts, .hideAds, .hideProxyPromo]
+        case .privacy: return [.alwaysOffline, .blockTyping, .blockCloudReads, .localDrafts, .hideAds, .hideProxyPromo, .cleanLinks, .hideAppPreview]
+        case .gestures: return [.customGestures]
+        case .settings: return []
         case .appearance: return [.lowercaseInterface, .localPremium, .hideStories, .disableStoryCamera, .dynamicIsland]
         case .media: return [.localTranscription, .localTranslation, .archiveDownloadedMedia]
         case .chats: return [.hideAllChats, .foldersAtBottom, .rememberFolder]
@@ -76,6 +80,14 @@ private enum FaithgramAction: String {
     case channelMedia = "Save media from channels"
     case notifications = "Sounds and notification settings"
     case activityStatus = "Live Activity status"
+    case privacyProfiles = "Privacy profiles"
+    case savePrivacyProfile = "Save current controls as custom profile"
+    case undoPrivacyProfile = "Restore previous privacy controls"
+    case ghostChats = "Ghost mode in selected chats"
+    case gestureUp = "Three-finger swipe up"
+    case gestureDown = "Three-finger swipe down"
+    case exportSettings = "Export encrypted settings"
+    case restoreSettings = "Restore encrypted settings"
 }
 
 private final class FaithgramToggle: UISwitch {
@@ -96,6 +108,7 @@ private final class FaithgramSettingsController: ViewController, UITableViewData
     private var observer: NSObjectProtocol?
     private let actionDisposable = MetaDisposable()
     private lazy var sessionBackup = FaithgramSessionBackupController(context: self.context)
+    private lazy var settingsBackup = FaithgramSettingsBackupController(context: self.context)
 
     init(context: AccountContext, category: FaithgramCategory? = nil) {
         self.context = context
@@ -174,8 +187,11 @@ private final class FaithgramSettingsController: ViewController, UITableViewData
             if category == .extraGifts { self.rows.append(.action(.giftCatalog)) }
             if category == .privacy {
                 self.rows.insert(.ghost, at: 0)
-                self.rows += [.action(.lockNow), .action(.passcode)]
+                self.rows.insert(.action(.privacyProfiles), at: 0)
+                self.rows += [.action(.savePrivacyProfile), .action(.undoPrivacyProfile), .action(.ghostChats), .action(.lockNow), .action(.passcode)]
             }
+            if category == .gestures { self.rows += [.action(.gestureUp), .action(.gestureDown)] }
+            if category == .settings { self.rows += [.action(.exportSettings), .action(.restoreSettings)] }
             if category == .accounts { self.rows += [.action(.exportSessions), .action(.restoreSessions)] }
             if category == .appearance { self.rows += [.action(.activityStatus), .action(.theme), .action(.stickers)] }
             if category == .notifications { self.rows.append(.action(.notifications)) }
@@ -256,6 +272,10 @@ private final class FaithgramSettingsController: ViewController, UITableViewData
             cell.accessoryType = .disclosureIndicator
             if action == .exportSessions || action == .restoreSessions { cell.detailTextLabel?.text = FaithgramPreferences.interfaceText("Password-protected backup of active sessions") }
             if action == .activityStatus { cell.detailTextLabel?.text = FaithgramPreferences.text("activityStatus", fallback: "Check permissions and signing") }
+            if action == .privacyProfiles { cell.detailTextLabel?.text = FaithgramPrivacySettings.currentProfile }
+            if action == .ghostChats { cell.detailTextLabel?.text = FaithgramPreferences.interfaceText("Long-press a message to enable Ghost for that chat. Rules apply to matching chats in all local accounts. Online status is an account-wide control.") }
+            if action == .gestureUp || action == .gestureDown { cell.detailTextLabel?.text = FaithgramPreferences.interfaceText(gestureTitle(FaithgramPreferences.text(action == .gestureUp ? "gesture.up" : "gesture.down", fallback: action == .gestureUp ? "profiles" : "ghost"))) }
+            if action == .exportSettings || action == .restoreSettings { cell.detailTextLabel?.text = FaithgramPreferences.interfaceText("Password-protected Faithgram preferences and chat rules") }
         }
         return cell
     }
@@ -306,6 +326,26 @@ private final class FaithgramSettingsController: ViewController, UITableViewData
     }
     private func perform(_ action: FaithgramAction) {
         switch action {
+        case .exportSettings: settingsBackup.exportSettings()
+        case .restoreSettings: settingsBackup.importSettings()
+        case .privacyProfiles:
+            let alert = UIAlertController(title: FaithgramPreferences.interfaceText("Privacy profiles"), message: FaithgramPreferences.interfaceText("Standard turns these privacy controls off. Quiet hides your phone, ads, pinned and mention notifications, cleans links and conceals the app preview. Ghost also suppresses online status, reads, typing, upload indicators and cloud drafts. Chat-specific Ghost rules remain active."), preferredStyle: .alert)
+            for name in FaithgramPrivacySettings.profiles where name != "custom" || UserDefaults.standard.data(forKey: "faithgram.privacy.custom") != nil {
+                alert.addAction(UIAlertAction(title: name, style: .default) { _ in let _ = FaithgramPrivacySettings.applyProfile(name) })
+            }
+            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
+            context.sharedContext.mainWindow?.presentNative(alert)
+        case .savePrivacyProfile: FaithgramPrivacySettings.saveCustomProfile(); showInfo("Custom privacy profile saved.")
+        case .undoPrivacyProfile: showInfo(FaithgramPrivacySettings.restorePreviousProfile() ? "Previous privacy controls restored." : "No previous profile to restore.")
+        case .ghostChats: showInfo("Long-press a message and choose Ghost mode for this chat. The rule suppresses reads, typing and upload indicators for that peer across local accounts. Turning it off keeps global Ghost controls active. Telegram online status applies to the whole account.")
+        case .gestureUp, .gestureDown:
+            let key = action == .gestureUp ? "gesture.up" : "gesture.down"
+            let alert = UIAlertController(title: FaithgramPreferences.interfaceText(action.rawValue), message: FaithgramPreferences.interfaceText("Use three fingers outside text editors. Home Screen quick actions wait for the app to unlock."), preferredStyle: .alert)
+            for value in ["none", "profiles", "ghost", "lock", "cleanLinks"] {
+                alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText(gestureTitle(value)), style: .default) { _ in FaithgramPreferences.setText(key, value) })
+            }
+            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
+            context.sharedContext.mainWindow?.presentNative(alert)
         case .exportSessions: sessionBackup.exportSessions()
         case .restoreSessions: sessionBackup.importSessions()
         case .history: openSettingsPage(FaithgramHistoryController(context: context))
@@ -358,6 +398,15 @@ private final class FaithgramSettingsController: ViewController, UITableViewData
             alert.addAction(UIAlertAction(title: "close", style: .cancel))
             context.sharedContext.mainWindow?.presentNative(alert)
         }
+    }
+
+    private func gestureTitle(_ value: String) -> String {
+        switch value { case "profiles": return "Choose privacy profile"; case "ghost": return "Toggle Ghost mode"; case "lock": return "Lock app"; case "cleanLinks": return "Toggle link cleaning"; default: return "No action" }
+    }
+    private func showInfo(_ message: String) {
+        let alert = UIAlertController(title: "faithgram", message: FaithgramPreferences.interfaceText(message), preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("OK"), style: .default))
+        context.sharedContext.mainWindow?.presentNative(alert)
     }
 
 }

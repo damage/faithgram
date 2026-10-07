@@ -60,18 +60,19 @@ public enum FaithgramVault {
         guard status == kCCSuccess else { throw FaithgramVaultError.invalidKey }
         return Data(derived)
     }
-    public static func encryptBackup(_ data: Data, password: String) throws -> Data {
+    public static func encryptBackup(_ data: Data, password: String, format: String = "faithgram.sessions") throws -> Data {
+        guard ["faithgram.sessions", "faithgram.settings"].contains(format) else { throw FaithgramVaultError.invalidFile }
         guard data.count <= 10 * 1024 * 1024 else { throw FaithgramVaultError.invalidFile }
         let salt = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
         let key = try passwordKey(password, salt: salt)
-        let sealed = try seal(data, key: key, context: "faithgram.sessions.v1")
-        return try JSONEncoder().encode(Envelope(format: "faithgram.sessions", version: 1, salt: salt, rounds: rounds, sealed: sealed))
+        let sealed = try seal(data, key: key, context: format + ".v1")
+        return try JSONEncoder().encode(Envelope(format: format, version: 1, salt: salt, rounds: rounds, sealed: sealed))
     }
-    public static func decryptBackup(_ data: Data, password: String) throws -> Data {
+    public static func decryptBackup(_ data: Data, password: String, format: String = "faithgram.sessions") throws -> Data {
         guard data.count <= 16 * 1024 * 1024 else { throw FaithgramVaultError.invalidFile }
         let file = try JSONDecoder().decode(Envelope.self, from: data)
-        guard file.format == "faithgram.sessions", file.version == 1, file.rounds == rounds, file.salt.count == 32 else { throw FaithgramVaultError.invalidFile }
-        return try open(file.sealed, key: passwordKey(password, salt: file.salt), context: "faithgram.sessions.v1")
+        guard ["faithgram.sessions", "faithgram.settings"].contains(format), file.format == format, file.version == 1, file.rounds == rounds, file.salt.count == 32 else { throw FaithgramVaultError.invalidFile }
+        return try open(file.sealed, key: passwordKey(password, salt: file.salt), context: format + ".v1")
     }
 
     public static func write(_ data: Data, to url: URL) throws {
