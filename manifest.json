@@ -19,7 +19,7 @@
   },
   "patch": {
     "path": "patches/0001-local-policy.patch",
-    "sha256": "a0deb8e38698a8666a4aeffe02ab212c4b80e0f97d2dd931a389d89418e57c90",
+    "sha256": "1456c2202362543697b7f77f79854b589b6802dc67d723ae82823c8b7efeab27",
     "files": [
       "Telegram/BUILD",
       "Telegram/FaithgramActivityWidget/FaithgramActivityWidget.swift",
@@ -28,6 +28,7 @@
       "build-system/GenerateStrings/GenerateStrings.py",
       "submodules/ChatListUI/Sources/ChatListController.swift",
       "submodules/ChatListUI/Sources/ChatListControllerNode.swift",
+      "submodules/ChatListUI/Sources/Node/ChatListItem.swift",
       "submodules/ChatListUI/Sources/Node/ChatListItemStrings.swift",
       "submodules/FaithgramActivity/BUILD",
       "submodules/FaithgramActivity/Sources/FaithgramActivityAttributes.swift",
@@ -36,48 +37,91 @@
       "submodules/SettingsUI/Sources/FaithgramHistoryController.swift",
       "submodules/SettingsUI/Sources/FaithgramSessionBackupController.swift",
       "submodules/SettingsUI/Sources/PatchClientSettingsController.swift",
+      "submodules/TelegramCore/Sources/Account/Account.swift",
       "submodules/TelegramCore/Sources/Account/AccountManager.swift",
+      "submodules/TelegramCore/Sources/ApiUtils/StoreMessage_Telegram.swift",
       "submodules/TelegramCore/Sources/Network/Download.swift",
       "submodules/TelegramCore/Sources/Network/FetchedMediaResource.swift",
       "submodules/TelegramCore/Sources/Network/Network.swift",
+      "submodules/TelegramCore/Sources/PatchClient/FaithgramAppConfiguration.swift",
       "submodules/TelegramCore/Sources/PatchClient/FaithgramArchivedMedia.swift",
+      "submodules/TelegramCore/Sources/PatchClient/FaithgramBlockedPeers.swift",
+      "submodules/TelegramCore/Sources/PatchClient/FaithgramGiftPresentation.swift",
       "submodules/TelegramCore/Sources/PatchClient/FaithgramHistoryStore.swift",
+      "submodules/TelegramCore/Sources/PatchClient/FaithgramLocalGiftTransfers.swift",
       "submodules/TelegramCore/Sources/PatchClient/FaithgramMediaArchive.swift",
       "submodules/TelegramCore/Sources/PatchClient/FaithgramMessageFilter.swift",
       "submodules/TelegramCore/Sources/PatchClient/FaithgramMessageHistory.swift",
+      "submodules/TelegramCore/Sources/PatchClient/FaithgramPeerPresentation.swift",
       "submodules/TelegramCore/Sources/PatchClient/FaithgramPreferences.swift",
+      "submodules/TelegramCore/Sources/PatchClient/FaithgramProtocolLog.swift",
       "submodules/TelegramCore/Sources/PatchClient/FaithgramRichTranslation.swift",
       "submodules/TelegramCore/Sources/PatchClient/FaithgramSessionBackup.swift",
+      "submodules/TelegramCore/Sources/PatchClient/FaithgramSettingsSignal.swift",
       "submodules/TelegramCore/Sources/PatchClient/FaithgramVault.swift",
+      "submodules/TelegramCore/Sources/PatchClient/FaithgramVisualPreferences.swift",
       "submodules/TelegramCore/Sources/PatchClient/PatchClientPolicy.swift",
       "submodules/TelegramCore/Sources/PatchClient/PatchClientStorage.swift",
       "submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift",
       "submodules/TelegramCore/Sources/State/AccountStateManager.swift",
+      "submodules/TelegramCore/Sources/State/ApplyUpdateMessage.swift",
+      "submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift",
+      "submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift",
+      "submodules/TelegramCore/Sources/State/ManagedRecentStickers.swift",
+      "submodules/TelegramCore/Sources/State/ManagedServiceViews.swift",
       "submodules/TelegramCore/Sources/State/RestoreFetchedDrafts.swift",
+      "submodules/TelegramCore/Sources/State/SynchronizeRecentlyUsedMediaOperations.swift",
       "submodules/TelegramCore/Sources/SyncCore/SyncCore_AccountBackupDataAttribute.swift",
+      "submodules/TelegramCore/Sources/SyncCore/SyncCore_AppConfiguration.swift",
+      "submodules/TelegramCore/Sources/SyncCore/SyncCore_AutoremoveTimeoutMessageAttribute.swift",
+      "submodules/TelegramCore/Sources/SyncCore/SyncCore_CachedGroupData.swift",
       "submodules/TelegramCore/Sources/TelegramEngine/Messages/MarkMessageContentAsConsumedInteractively.swift",
       "submodules/TelegramCore/Sources/TelegramEngine/Messages/Translate.swift",
+      "submodules/TelegramCore/Sources/TelegramEngine/Payments/StarGifts.swift",
+      "submodules/TelegramCore/Sources/TelegramEngine/Payments/Stars.swift",
+      "submodules/TelegramCore/Sources/TelegramEngine/Payments/TelegramEnginePayments.swift",
+      "submodules/TelegramCore/Sources/TelegramEngine/Peers/TelegramEnginePeers.swift",
+      "submodules/TelegramCore/Sources/TelegramEngine/Privacy/BlockedPeers.swift",
+      "submodules/TelegramCore/Sources/TelegramEngine/Privacy/BlockedPeersContext.swift",
+      "submodules/TelegramCore/Sources/TelegramEngine/Stickers/TelegramEngineStickers.swift",
+      "submodules/TelegramCore/Sources/Utils/MessageUtils.swift",
+      "submodules/TelegramCore/Sources/Utils/PeerUtils.swift",
       "submodules/TelegramPresentationData/Sources/PresentationData.swift",
       "submodules/TelegramUI/BUILD",
       "submodules/TelegramUI/Components/Chat/ChatInputTextNode/Sources/ChatRichTextInputNode.swift",
+      "submodules/TelegramUI/Components/Chat/ChatMessageActionButtonsNode/Sources/ChatMessageActionButtonsNode.swift",
+      "submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift",
       "submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift",
       "submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift",
       "submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift",
+      "submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode/Sources/ChatMessageInteractiveMediaNode.swift",
+      "submodules/TelegramUI/Components/Chat/ChatMessageItemView/Sources/ChatMessageItemView.swift",
       "submodules/TelegramUI/Components/Chat/ChatRichTextEditorComposer/Sources/RichTextEditorChatInputNode.swift",
       "submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift",
+      "submodules/TelegramUI/Components/Gifts/GiftViewScreen/Sources/GiftViewScreen.swift",
+      "submodules/TelegramUI/Components/GlobalControlPanelsContext/Sources/GlobalControlPanelsContext.swift",
       "submodules/TelegramUI/Components/HeaderPanelContainerComponent/Sources/HeaderPanelContainerComponent.swift",
+      "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoData.swift",
       "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift",
+      "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift",
       "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift",
+      "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenOpenPhone.swift",
       "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift",
       "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift",
       "submodules/TelegramUI/Components/RichTextEditor/Sources/RichTextEditorUIKit/Canvas/DocumentCanvasView.swift",
       "submodules/TelegramUI/Components/RichTextEditor/Sources/RichTextEditorUIKit/RichTextEditorView.swift",
+      "submodules/TelegramUI/Components/Stars/StarsBalanceOverlayComponent/Sources/StarsBalanceOverlayComponent.swift",
+      "submodules/TelegramUI/Components/Stars/StarsTransactionsScreen/Sources/StarsTransactionsScreen.swift",
       "submodules/TelegramUI/Components/TranslateHeaderPanelComponent/Sources/ChatTranslationPanelNode.swift",
+      "submodules/TelegramUI/Sources/AccountContext.swift",
       "submodules/TelegramUI/Sources/AppDelegate.swift",
+      "submodules/TelegramUI/Sources/ChatControllerOpenMessageReactionContextMenu.swift",
       "submodules/TelegramUI/Sources/ChatHistoryEntriesForView.swift",
       "submodules/TelegramUI/Sources/ChatHistoryListNode.swift",
       "submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift",
       "submodules/TelegramUI/Sources/FaithgramActivityManager.swift",
+      "submodules/TelegramUI/Sources/SharedAccountContext.swift",
+      "submodules/TelegramUI/Sources/TextLinkHandling.swift",
       "submodules/TranslateUI/Sources/ChatTranslation.swift",
       "submodules/TranslateUI/Sources/Translate.swift"
     ]
@@ -139,6 +183,14 @@
           "unwritable_storage_throws_before_account_startup"
         ]
       }
+    },
+    "latest_failed_build": {
+      "run_url": "https://github.com/damage/faithgram/actions/runs/37631554718",
+      "result": "local_transfer_signal_type_error_fixed_in_current_patch",
+      "foundation_tests_passed": 21,
+      "interface_checks": "passed",
+      "elapsed": "4m35s",
+      "ipa_created": false
     }
   },
   "features": [
@@ -162,53 +214,55 @@
     {
       "section": "Accounts",
       "feature": "Hide self phone",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Accounts",
       "feature": "Custom account settings",
-      "status": "pending_port"
+      "status": "implemented_build_pending",
+      "note": "Presentation overrides preserve server identity, cached original fields and financial state."
     },
     {
       "section": "Messages",
       "feature": "Message settings",
-      "status": "partial_compiled_device_untested",
-      "note": "Partially implemented through the Typing activity, Read receipts and Local drafts subpatches."
+      "status": "implemented_build_pending",
+      "note": "Typing and upload activity, cloud and secret read receipts, local drafts, custom fact checks, content protection and local expiry controls."
     },
     {
       "section": "Messages",
       "feature": "Show bot callback-data on hover",
-      "status": "pending_port"
+      "status": "implemented_build_pending",
+      "note": "iOS uses long press on callback buttons to inspect and copy UTF-8 or hex data."
     },
     {
       "section": "Messages",
       "feature": "Sensitive blur",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Messages",
       "feature": "More recent stickers",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Messages",
       "feature": "Open links without warning",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Messages",
       "feature": "Disable media spoilers",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Optimizations",
       "feature": "Disable Premium, Stars, TON & Gifts",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Optimizations",
       "feature": "Disable premium effects",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Optimizations",
@@ -218,31 +272,31 @@
     {
       "section": "Optimizations",
       "feature": "Disable ads",
-      "status": "implemented_compiled_device_untested",
+      "status": "implemented_build_pending",
       "note": "Both Telegram Ads and Proxy sponsor subpatches implemented in source."
     },
     {
       "section": "Gifts",
       "feature": "Spoof profile gifts",
-      "status": "pending_port",
+      "status": "implemented_build_pending",
       "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
     },
     {
       "section": "Gifts",
       "feature": "Spoof profile unique gifts",
-      "status": "pending_port",
+      "status": "implemented_build_pending",
       "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
     },
     {
       "section": "Gifts",
       "feature": "Fake transfer",
-      "status": "pending_port",
-      "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
+      "status": "implemented_build_pending",
+      "note": "Local service-message preview only; no payment form or transfer RPC; removed on process restart."
     },
     {
       "section": "Gifts",
       "feature": "Show hidden gifts",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Misc",
@@ -252,8 +306,8 @@
     {
       "section": "Misc",
       "feature": "MTProto request/response logger",
-      "status": "pending_port",
-      "note": "Decoded logs contain sensitive data; full logger is pending and will be off by default."
+      "status": "implemented_build_pending",
+      "note": "Decoded Telegram client API requests, responses and errors; encrypted local rolling store; off by default."
     },
     {
       "section": "Message Settings Subpatches",
@@ -277,74 +331,76 @@
     {
       "section": "Message Settings Subpatches",
       "feature": "Custom Fact Check",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Message Settings Subpatches",
       "feature": "Copy/save protect content",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Message Settings Subpatches",
       "feature": "Disable TTL",
-      "status": "pending_port"
+      "status": "implemented_build_pending",
+      "note": "Local expiry display and cleanup control; raw expiry attributes remain available to exclude disappearing media from archives."
     },
     {
       "section": "Disable Premium, Stars, TON & Gifts Subpatches",
       "feature": "App config",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Disable Premium, Stars, TON & Gifts Subpatches",
       "feature": "Premium UI",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Disable Premium, Stars, TON & Gifts Subpatches",
       "feature": "Gifts",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Disable Premium, Stars, TON & Gifts Subpatches",
       "feature": "Paid reactions",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Disable Premium, Stars, TON & Gifts Subpatches",
       "feature": "Emoji statuses and effects",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Disable Premium, Stars, TON & Gifts Subpatches",
       "feature": "Stars, TON and collectibles",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Disable Premium, Stars, TON & Gifts Subpatches",
       "feature": "Boosts",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Disable Premium, Stars, TON & Gifts Subpatches",
       "feature": "Read receipts fix",
-      "status": "pending_port"
+      "status": "implemented_build_pending",
+      "note": "Read-stat UI remains available when premium purchase UI is disabled; server permissions still apply."
     },
     {
       "section": "Custom Account Settings Subpatches",
       "feature": "Custom Stars",
-      "status": "pending_port",
+      "status": "implemented_build_pending",
       "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
     },
     {
       "section": "Custom Account Settings Subpatches",
       "feature": "Custom TON",
-      "status": "pending_port",
+      "status": "implemented_build_pending",
       "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
     },
     {
       "section": "Custom Account Settings Subpatches",
       "feature": "Custom level rating",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Custom Account Settings Subpatches",
@@ -354,7 +410,7 @@
     {
       "section": "Custom Account Settings Subpatches",
       "feature": "Bot verification",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Custom Account Settings Subpatches",
@@ -365,34 +421,34 @@
     {
       "section": "Custom Account Settings Subpatches",
       "feature": "Account freeze",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Custom Account Settings Subpatches",
       "feature": "Custom phone number",
-      "status": "pending_port",
+      "status": "implemented_build_pending",
       "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
     },
     {
       "section": "Custom Account Settings Subpatches",
       "feature": "Custom userID",
-      "status": "pending_port",
+      "status": "implemented_build_pending",
       "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
     },
     {
       "section": "Custom Account Settings Subpatches",
       "feature": "Local attached channel",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Custom Account Settings Subpatches",
       "feature": "Fragment phone",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Custom Account Settings Subpatches",
       "feature": "Custom list usernames",
-      "status": "pending_port"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Disable Ads Subpatches",
@@ -409,8 +465,8 @@
     {
       "section": "Additional features",
       "feature": "Hide blocked users' messages",
-      "status": "pending_port",
-      "note": "Pending implementation."
+      "status": "implemented_build_pending",
+      "note": "Account-scoped block list with paged server refresh and live successful block/unblock updates; filters history, previews and in-app notifications."
     }
   ],
   "assets": [

@@ -363,8 +363,38 @@ index 00220fd..f84ad96 100644
      if !storySubscriptions.items.isEmpty {
          return true
      }
+diff --git a/submodules/ChatListUI/Sources/Node/ChatListItem.swift b/submodules/ChatListUI/Sources/Node/ChatListItem.swift
+index 9da6217..3552ae5 100644
+--- a/submodules/ChatListUI/Sources/Node/ChatListItem.swift
++++ b/submodules/ChatListUI/Sources/Node/ChatListItem.swift
+@@ -1885,6 +1885,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
+             enablePreview = false
+         }
+         
++        if PatchClientPolicy.isEnabled(.hideStories) { storyState = nil }
+         self.avatarNode.setStoryStats(storyStats: storyState.flatMap { storyState in
+             return AvatarNode.StoryStats(
+                 totalCount: storyState.stats.totalCount,
+@@ -3557,7 +3558,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
+                                 currentCredibilityIconContent = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_ScamAccount.uppercased())
+                             } else if peer.isFake {
+                                 currentCredibilityIconContent = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_FakeAccount.uppercased())
+-                            } else if let emojiStatus = peer.emojiStatus {
++                            } else if !PatchClientPolicy.isEnabled(.hideEmojiStatus), let emojiStatus = peer.emojiStatus {
+                                 currentStatusIconContent = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 32.0, height: 32.0), placeholderColor: item.presentationData.theme.list.mediaPlaceholderColor, themeColor: item.presentationData.theme.list.itemAccentColor, loopMode: .count(2))
+                                 if let color = emojiStatus.color {
+                                     currentStatusIconParticleColor = UIColor(rgb: UInt32(bitPattern: color))
+@@ -3588,7 +3589,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
+                         currentCredibilityIconContent = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_ScamAccount.uppercased())
+                     } else if peer.isFake {
+                         currentCredibilityIconContent = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_FakeAccount.uppercased())
+-                    } else if let emojiStatus = peer.emojiStatus {
++                    } else if !PatchClientPolicy.isEnabled(.hideEmojiStatus), let emojiStatus = peer.emojiStatus {
+                         currentStatusIconContent = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 32.0, height: 32.0), placeholderColor: item.presentationData.theme.list.mediaPlaceholderColor, themeColor: item.presentationData.theme.list.itemAccentColor, loopMode: .count(2))
+                         if let color = emojiStatus.color {
+                             currentStatusIconParticleColor = UIColor(rgb: UInt32(bitPattern: color))
 diff --git a/submodules/ChatListUI/Sources/Node/ChatListItemStrings.swift b/submodules/ChatListUI/Sources/Node/ChatListItemStrings.swift
-index a87986b..c7cc3e4 100644
+index a87986b..6bf2943 100644
 --- a/submodules/ChatListUI/Sources/Node/ChatListItemStrings.swift
 +++ b/submodules/ChatListUI/Sources/Node/ChatListItemStrings.swift
 @@ -81,6 +81,10 @@ public func chatListItemStrings(strings: PresentationStrings, nameDisplayOrder:
@@ -372,7 +402,7 @@ index a87986b..c7cc3e4 100644
      
      let message = messages.last
 +
-+    if let message, FaithgramMessageFilter.matches(message.text) {
++    if let message, FaithgramMessageFilter.matches(message.text) || (PatchClientPolicy.isEnabled(.hideBlockedMessages) && message.author.map { FaithgramBlockedPeers.contains(accountId: accountPeerId.toInt64(), peerId: $0.id.toInt64()) } == true) {
 +        return (chatPeer.chatMainPeer, true, FaithgramPreferences.interfaceText("Filtered message"), [], nil, nil, nil)
 +    }
      
@@ -776,10 +806,10 @@ index 0000000..2106db3
 +}
 diff --git a/submodules/SettingsUI/Sources/PatchClientSettingsController.swift b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
 new file mode 100644
-index 0000000..794a2f5
+index 0000000..7384cc6
 --- /dev/null
 +++ b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
-@@ -0,0 +1,304 @@
+@@ -0,0 +1,367 @@
 +import Foundation
 +import UIKit
 +import AsyncDisplayKit
@@ -791,8 +821,10 @@ index 0000000..794a2f5
 +import AccountContext
 +
 +private enum FaithgramCategory: String, CaseIterable {
-+    case accounts, messages, privacy, appearance, media, chats, notifications, badges
-+    var title: String { return self.rawValue.capitalized }
++    case accounts, messages, privacy, appearance, media, chats, notifications, badges, profile, balances, gifts, uniqueGifts, extraGifts, optimizations, diagnostics
++    var title: String {
++        switch self { case .uniqueGifts: return "Unique gifts"; case .extraGifts: return "Extra gifts"; default: return self.rawValue.capitalized }
++    }
 +    var symbol: String {
 +        switch self {
 +        case .accounts: return "person.crop.circle"
@@ -803,24 +835,37 @@ index 0000000..794a2f5
 +        case .chats: return "folder"
 +        case .notifications: return "bell.badge"
 +        case .badges: return "checkmark.seal"
++        case .profile: return "person.text.rectangle"
++        case .balances: return "star.circle"
++        case .gifts, .uniqueGifts, .extraGifts: return "gift"
++        case .optimizations: return "slider.horizontal.3"
++        case .diagnostics: return "doc.text.magnifyingglass"
 +        }
 +    }
 +    var options: [PatchClientOption] {
 +        switch self {
-+        case .accounts: return [.unlimitedAccounts, .noPhoneException]
-+        case .messages: return [.saveDeletedMessages, .saveEditHistory, .regexFilters, .formattingPanel]
++        case .accounts: return [.unlimitedAccounts, .noPhoneException, .hideSelfPhone]
++        case .messages: return [.saveDeletedMessages, .saveEditHistory, .regexFilters, .formattingPanel, .customFactCheck, .copyProtectedContent, .disableTTL, .showCallbackData, .disableSensitiveBlur, .moreRecentStickers, .openLinksWithoutWarning, .disableMediaSpoilers, .hideBlockedMessages]
 +        case .privacy: return [.alwaysOffline, .blockTyping, .blockCloudReads, .localDrafts, .hideAds, .hideProxyPromo]
 +        case .appearance: return [.lowercaseInterface, .localPremium, .hideStories, .disableStoryCamera, .dynamicIsland]
 +        case .media: return [.localTranscription, .localTranslation, .archiveDownloadedMedia]
 +        case .chats: return [.hideAllChats, .foldersAtBottom, .rememberFolder]
 +        case .notifications: return [.hidePinnedNotifications, .hideMentionNotifications]
 +        case .badges: return []
++        case .profile: return [.customProfile]
++        case .balances: return [.customBalances]
++        case .gifts: return [.spoofGifts]
++        case .uniqueGifts: return [.spoofUniqueGifts, .fakeGiftTransfer]
++        case .extraGifts: return [.showHiddenGifts]
++        case .optimizations: return [.disableMonetizationConfig, .hidePremiumUI, .hideGifts, .disablePaidReactions, .hideEmojiStatus, .hideCurrencies, .hideBoosts, .disablePremiumEffects]
++        case .diagnostics: return [.protocolLogger]
 +        }
 +    }
 +}
 +
 +private enum FaithgramRow {
 +    case category(FaithgramCategory)
++    case visualField(FaithgramVisualPreferences.Field)
 +    case toggle(PatchClientOption)
 +    case ghost
 +    case text(title: String, key: String, fallback: String)
@@ -833,6 +878,8 @@ index 0000000..794a2f5
 +    case exportSessions = "Export sessions backup"
 +    case restoreSessions = "Restore sessions backup"
 +    case history = "Message history"
++    case protocolLog = "View protocol log"
++    case giftCatalog = "Gift catalog ids"
 +    case lockNow = "Lock now"
 +    case passcode = "Passcode and Face ID"
 +    case theme = "Theme, text size and chat appearance"
@@ -926,6 +973,18 @@ index 0000000..794a2f5
 +        self.title = self.category.map { FaithgramPreferences.interfaceText($0.title) } ?? "faithgram"
 +        if let category = self.category {
 +            self.rows = category.options.map(FaithgramRow.toggle)
++            let visualFields: [FaithgramVisualPreferences.Field]
++            switch category {
++            case .profile: visualFields = FaithgramVisualPreferences.profileFields
++            case .balances: visualFields = FaithgramVisualPreferences.balanceFields
++            case .gifts: visualFields = FaithgramVisualPreferences.regularGiftFields
++            case .uniqueGifts: visualFields = FaithgramVisualPreferences.uniqueGiftFields
++            case .extraGifts: visualFields = FaithgramVisualPreferences.hiddenGiftFields
++            default: visualFields = []
++            }
++            self.rows += visualFields.map(FaithgramRow.visualField)
++            if category == .diagnostics { self.rows.append(.action(.protocolLog)) }
++            if category == .extraGifts { self.rows.append(.action(.giftCatalog)) }
 +            if category == .privacy {
 +                self.rows.insert(.ghost, at: 0)
 +                self.rows += [.action(.lockNow), .action(.passcode)]
@@ -936,7 +995,7 @@ index 0000000..794a2f5
 +            if category == .messages {
 +                self.rows += [.text(title: "Deleted mark", key: "deletedMark", fallback: "🧹"),
 +                              .text(title: "Edited mark", key: "editedMark", fallback: "🧹"),
-+                              .text(title: "Regex rules", key: "regexRules", fallback: ""), .action(.history)]
++                              .text(title: "Regex rules", key: "regexRules", fallback: ""), .text(title: "Fact-check text", key: "factCheckText", fallback: ""), .action(.history)]
 +            }
 +            if category == .media {
 +                self.rows.append(.text(title: "Translation language", key: "translationTarget", fallback: Locale.current.identifier.components(separatedBy: CharacterSet(charactersIn: "_-" )).first ?? "en"))
@@ -969,6 +1028,11 @@ index 0000000..794a2f5
 +        case let .category(category):
 +            cell.textLabel?.text = FaithgramPreferences.interfaceText(category.title)
 +            cell.imageView?.image = UIImage(systemName: category.symbol)
++            cell.accessoryType = .disclosureIndicator
++        case let .visualField(field):
++            cell.textLabel?.text = FaithgramPreferences.interfaceText(field.title)
++            let value = FaithgramVisualPreferences.value(field.key, fallback: field.fallback)
++            cell.detailTextLabel?.text = value.isEmpty ? FaithgramPreferences.interfaceText("Not set") : value
 +            cell.accessoryType = .disclosureIndicator
 +        case let .toggle(option):
 +            cell.textLabel?.text = FaithgramPreferences.interfaceText(option.title)
@@ -1015,11 +1079,22 @@ index 0000000..794a2f5
 +        switch self.rows[indexPath.row] {
 +        case let .category(category):
 +            (self.navigationController as? NavigationController)?.pushViewController(FaithgramSettingsController(context: self.context, category: category))
++        case let .visualField(field):
++            if field.choices.isEmpty {
++                self.push(FaithgramTextController(context: context, title: FaithgramPreferences.interfaceText(field.title), text: FaithgramVisualPreferences.value(field.key, fallback: field.fallback), save: { text in try FaithgramVisualPreferences.save(field, text: text) }))
++            } else {
++                let alert = UIAlertController(title: FaithgramPreferences.interfaceText(field.title), message: nil, preferredStyle: .alert)
++                for choice in field.choices {
++                    alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText(choice), style: .default, handler: { _ in try? FaithgramVisualPreferences.save(field, text: choice) }))
++                }
++                alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
++                context.sharedContext.mainWindow?.presentNative(alert)
++            }
 +        case let .action(action): self.perform(action)
 +        case let .text(title, key, fallback):
-+            if key == "regexRules" {
-+                self.push(FaithgramTextController(context: context, title: FaithgramPreferences.interfaceText("Regex rules"), text: FaithgramPreferences.text(key), save: { text in
-+                    let _ = try FaithgramMessageFilter.compile(text)
++            if key == "regexRules" || key == "factCheckText" {
++                self.push(FaithgramTextController(context: context, title: FaithgramPreferences.interfaceText(title), text: FaithgramPreferences.text(key), save: { text in
++                    if key == "regexRules" { let _ = try FaithgramMessageFilter.compile(text) }
 +                    FaithgramPreferences.setText(key, text)
 +                }))
 +                return
@@ -1047,6 +1122,24 @@ index 0000000..794a2f5
 +        case .exportSessions: sessionBackup.exportSessions()
 +        case .restoreSessions: sessionBackup.importSessions()
 +        case .history: push(FaithgramHistoryController(context: context))
++        case .giftCatalog:
++            actionDisposable.set((context.engine.payments.cachedStarGifts() |> take(1) |> deliverOnMainQueue).start(next: { [weak self] gifts in
++                guard let self else { return }
++                let text = (gifts ?? []).map { gift -> String in
++                    switch gift {
++                    case let .generic(gift): return "\(gift.title ?? "Gift")\nid: \(gift.id)\ncustom emoji: \(gift.file.fileId.id)"
++                    case let .unique(gift): return "\(gift.title) #\(gift.number)\nid: \(gift.id)\nslug: \(gift.slug)"
++                    }
++                }.joined(separator: "\n\n")
++                self.push(FaithgramTextController(context: self.context, title: FaithgramPreferences.interfaceText("Gift catalog ids"), text: text.isEmpty ? "No cached gifts yet. Open the gift catalog first." : text, save: nil))
++            }))
++        case .protocolLog:
++            FaithgramProtocolLog.read { [weak self] result in
++                guard let self else { return }
++                let text: String
++                switch result { case let .success(value): text = value.isEmpty ? "The protocol log is empty." : value; case .failure: text = "The protocol log could not be decrypted." }
++                self.push(FaithgramTextController(context: self.context, title: FaithgramPreferences.interfaceText("Protocol log"), text: text, save: nil))
++            }
 +        case .lockNow:
 +            actionDisposable.set((context.sharedContext.accountManager.transaction { $0.getAccessChallengeData() } |> deliverOnMainQueue).start(next: { [weak self] challenge in
 +                guard let self else { return }
@@ -1084,6 +1177,18 @@ index 0000000..794a2f5
 +public func patchClientSettingsController(context: AccountContext) -> ViewController {
 +    return FaithgramSettingsController(context: context)
 +}
+diff --git a/submodules/TelegramCore/Sources/Account/Account.swift b/submodules/TelegramCore/Sources/Account/Account.swift
+index ffff914..7a0e20e 100644
+--- a/submodules/TelegramCore/Sources/Account/Account.swift
++++ b/submodules/TelegramCore/Sources/Account/Account.swift
+@@ -1247,6 +1247,7 @@ public class Account {
+         self.network = network
+         self.networkArguments = networkArguments
+         self.peerId = peerId
++        FaithgramVisualPreferences.registerOwnPeer(peerId.id._internalGetInt64Value())
+         
+         self.auxiliaryMethods = auxiliaryMethods
+         self.supplementary = supplementary
 diff --git a/submodules/TelegramCore/Sources/Account/AccountManager.swift b/submodules/TelegramCore/Sources/Account/AccountManager.swift
 index 3f2b479..b73ccbb 100644
 --- a/submodules/TelegramCore/Sources/Account/AccountManager.swift
@@ -1096,11 +1201,93 @@ index 3f2b479..b73ccbb 100644
      declareEncodable(EditedMessageAttribute.self, f: { EditedMessageAttribute(decoder: $0) })
      declareEncodable(ReplyMarkupMessageAttribute.self, f: { ReplyMarkupMessageAttribute(decoder: $0) })
      declareEncodable(OutgoingChatContextResultMessageAttribute.self, f: { OutgoingChatContextResultMessageAttribute(decoder: $0) })
+diff --git a/submodules/TelegramCore/Sources/ApiUtils/StoreMessage_Telegram.swift b/submodules/TelegramCore/Sources/ApiUtils/StoreMessage_Telegram.swift
+index 7db5db9..4964faf 100644
+--- a/submodules/TelegramCore/Sources/ApiUtils/StoreMessage_Telegram.swift
++++ b/submodules/TelegramCore/Sources/ApiUtils/StoreMessage_Telegram.swift
+@@ -601,7 +601,7 @@ func textMediaAndExpirationTimerFromApiMedia(_ media: Api.MessageMedia?, _ peerI
+             let (flags, photo, ttlSeconds) = (messageMediaPhotoData.flags, messageMediaPhotoData.photo, messageMediaPhotoData.ttlSeconds)
+             if let photo = photo {
+                 if let mediaImage = telegramMediaImageFromApiPhoto(photo, video: messageMediaPhotoData.video) {
+-                    return (mediaImage, ttlSeconds, nil, (flags & (1 << 3)) != 0, nil, nil)
++                    return (mediaImage, ttlSeconds, nil, !PatchClientPolicy.isEnabled(.disableMediaSpoilers) && (flags & (1 << 3)) != 0, nil, nil)
+                 }
+             } else {
+                 return (TelegramMediaExpiredContent(data: .image), nil, nil, nil, nil, nil)
+@@ -627,7 +627,7 @@ func textMediaAndExpirationTimerFromApiMedia(_ media: Api.MessageMedia?, _ peerI
+             let (flags, document, altDocuments, coverPhoto, videoTimestamp, ttlSeconds) = (messageMediaDocumentData.flags, messageMediaDocumentData.document, messageMediaDocumentData.altDocuments, messageMediaDocumentData.videoCover, messageMediaDocumentData.videoTimestamp, messageMediaDocumentData.ttlSeconds)
+             if let document = document {
+                 if let mediaFile = telegramMediaFileFromApiDocument(document, altDocuments: altDocuments, videoCover: coverPhoto) {
+-                    return (mediaFile, ttlSeconds, (flags & (1 << 3)) != 0, (flags & (1 << 4)) != 0, nil, videoTimestamp)
++                    return (mediaFile, ttlSeconds, (flags & (1 << 3)) != 0, !PatchClientPolicy.isEnabled(.disableMediaSpoilers) && (flags & (1 << 4)) != 0, nil, videoTimestamp)
+                 }
+             } else {
+                 var data: TelegramMediaExpiredContentData
 diff --git a/submodules/TelegramCore/Sources/Network/Download.swift b/submodules/TelegramCore/Sources/Network/Download.swift
-index ab16e78..8470c10 100644
+index ab16e78..473b250 100644
 --- a/submodules/TelegramCore/Sources/Network/Download.swift
 +++ b/submodules/TelegramCore/Sources/Network/Download.swift
-@@ -306,10 +306,15 @@ class Download: NSObject, MTRequestMessageServiceDelegate {
+@@ -148,9 +148,10 @@ class Download: NSObject, MTRequestMessageServiceDelegate {
+             }
+             
+             saveFilePart = wrapMethodBody(saveFilePart, useCompression: useCompression)
+-            
++            let faithgramLogId = FaithgramProtocolLog.begin(saveFilePart.0, original: saveFilePart.1, effectivePayload: saveFilePart.1.makeData())
+             request.setPayload(saveFilePart.1.makeData() as Data, metadata: WrappedRequestMetadata(metadata: WrappedFunctionDescription(saveFilePart.0), tag: nil), shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedShortFunctionDescription(saveFilePart.0)), responseParser: { response in
+                 if let result = saveFilePart.2.parse(Buffer(data: response)) {
++                    FaithgramProtocolLog.finish(faithgramLogId, result: result)
+                     return BoxedMessage(result)
+                 }
+                 return nil
+@@ -171,6 +172,7 @@ class Download: NSObject, MTRequestMessageServiceDelegate {
+             
+             request.completed = { (boxedResponse, timestamp, error) -> () in
+                 if let error = error {
++                    FaithgramProtocolLog.fail(faithgramLogId, code: Int(error.errorCode), description: error.errorDescription)
+                     subscriber.putError(error)
+                 } else {
+                     subscriber.putCompletion()
+@@ -204,9 +206,10 @@ class Download: NSObject, MTRequestMessageServiceDelegate {
+             }
+             
+             let data = Api.functions.upload.getWebFile(location: location, offset: Int32(offset), limit: Int32(updatedLength))
+-            
++            let faithgramLogId = FaithgramProtocolLog.begin(data.0, original: data.1, effectivePayload: data.1.makeData())
+             request.setPayload(data.1.makeData() as Data, metadata: WrappedRequestMetadata(metadata: WrappedFunctionDescription(data.0), tag: nil), shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedFunctionDescription(data.0)), responseParser: { response in
+                 if let result = data.2.parse(Buffer(data: response)) {
++                    FaithgramProtocolLog.finish(faithgramLogId, result: result)
+                     return BoxedMessage(result)
+                 }
+                 return nil
+@@ -221,6 +224,7 @@ class Download: NSObject, MTRequestMessageServiceDelegate {
+             
+             request.completed = { (boxedResponse, timestamp, error) -> () in
+                 if let error = error {
++                    FaithgramProtocolLog.fail(faithgramLogId, code: Int(error.errorCode), description: error.errorDescription)
+                     subscriber.putError(error)
+                 } else {
+                     if let result = (boxedResponse as! BoxedMessage).body as? Api.upload.WebFile {
+@@ -258,9 +262,10 @@ class Download: NSObject, MTRequestMessageServiceDelegate {
+             }
+             
+             let data = Api.functions.upload.getFile(flags: 0, location: location, offset: offset, limit: Int32(updatedLength))
+-            
++            let faithgramLogId = FaithgramProtocolLog.begin(data.0, original: data.1, effectivePayload: data.1.makeData())
+             request.setPayload(data.1.makeData() as Data, metadata: WrappedRequestMetadata(metadata: WrappedFunctionDescription(data.0), tag: nil), shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedShortFunctionDescription(data.0)), responseParser: { response in
+                 if let result = data.2.parse(Buffer(data: response)) {
++                    FaithgramProtocolLog.finish(faithgramLogId, result: result)
+                     return BoxedMessage(result)
+                 }
+                 return nil
+@@ -275,6 +280,7 @@ class Download: NSObject, MTRequestMessageServiceDelegate {
+             
+             request.completed = { (boxedResponse, timestamp, error) -> () in
+                 if let error = error {
++                    FaithgramProtocolLog.fail(faithgramLogId, code: Int(error.errorCode), description: error.errorDescription)
+                     subscriber.putError(error)
+                 } else {
+                     if let result = (boxedResponse as! BoxedMessage).body as? Api.upload.File {
+@@ -306,11 +312,17 @@ class Download: NSObject, MTRequestMessageServiceDelegate {
      
      func request<T>(_ data: (FunctionDescription, Buffer, DeserializeFunctionResponse<T>), expectedResponseSize: Int32? = nil, automaticFloodWait: Bool = true, onFloodWaitError: ((String) -> Void)? = nil) -> Signal<T, MTRpcError> {
          return Signal { subscriber in
@@ -1111,13 +1298,24 @@ index ab16e78..8470c10 100644
 +            }
              let request = MTRequest()
              request.expectedResponseSize = expectedResponseSize ?? 0
-             
+-            
 -            request.setPayload(data.1.makeData() as Data, metadata: WrappedRequestMetadata(metadata: WrappedFunctionDescription(data.0), tag: nil), shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedShortFunctionDescription(data.0)), responseParser: { response in
++            let faithgramLogId = FaithgramProtocolLog.begin(data.0, original: data.1, effectivePayload: PatchClientPolicy.payload(for: data.0, original: data.1))
 +            request.setPayload(PatchClientPolicy.payload(for: data.0, original: data.1), metadata: WrappedRequestMetadata(metadata: WrappedFunctionDescription(data.0), tag: nil), shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedShortFunctionDescription(data.0)), responseParser: { response in
                  if let result = data.2.parse(Buffer(data: response)) {
++                    FaithgramProtocolLog.finish(faithgramLogId, result: result)
                      return BoxedMessage(result)
                  }
-@@ -358,10 +363,15 @@ class Download: NSObject, MTRequestMessageServiceDelegate {
+                 return nil
+@@ -334,6 +346,7 @@ class Download: NSObject, MTRequestMessageServiceDelegate {
+             
+             request.completed = { (boxedResponse, timestamp, error) -> () in
+                 if let error = error {
++                    FaithgramProtocolLog.fail(faithgramLogId, code: Int(error.errorCode), description: error.errorDescription)
+                     subscriber.putError(error)
+                 } else {
+                     if let result = (boxedResponse as! BoxedMessage).body as? T {
+@@ -358,11 +371,17 @@ class Download: NSObject, MTRequestMessageServiceDelegate {
      
      func requestWithAdditionalData<T>(_ data: (FunctionDescription, Buffer, DeserializeFunctionResponse<T>), automaticFloodWait: Bool = true, onFloodWaitError: ((String) -> Void)? = nil, failOnServerErrors: Bool = false, expectedResponseSize: Int32? = nil) -> Signal<(T, Double), (MTRpcError, Double)> {
          return Signal { subscriber in
@@ -1128,13 +1326,24 @@ index ab16e78..8470c10 100644
 +            }
              let request = MTRequest()
              request.expectedResponseSize = expectedResponseSize ?? 0
-             
+-            
 -            request.setPayload(data.1.makeData() as Data, metadata: WrappedRequestMetadata(metadata: WrappedFunctionDescription(data.0), tag: nil), shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedShortFunctionDescription(data.0)), responseParser: { response in
++            let faithgramLogId = FaithgramProtocolLog.begin(data.0, original: data.1, effectivePayload: PatchClientPolicy.payload(for: data.0, original: data.1))
 +            request.setPayload(PatchClientPolicy.payload(for: data.0, original: data.1), metadata: WrappedRequestMetadata(metadata: WrappedFunctionDescription(data.0), tag: nil), shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedShortFunctionDescription(data.0)), responseParser: { response in
                  if let result = data.2.parse(Buffer(data: response)) {
++                    FaithgramProtocolLog.finish(faithgramLogId, result: result)
                      return BoxedMessage(result)
                  }
-@@ -414,10 +424,15 @@ class Download: NSObject, MTRequestMessageServiceDelegate {
+                 return nil
+@@ -389,6 +408,7 @@ class Download: NSObject, MTRequestMessageServiceDelegate {
+             
+             request.completed = { (boxedResponse, info, error) -> () in
+                 if let error = error {
++                    FaithgramProtocolLog.fail(faithgramLogId, code: Int(error.errorCode), description: error.errorDescription)
+                     subscriber.putError((error, info?.timestamp ?? 0.0))
+                 } else {
+                     if let result = (boxedResponse as! BoxedMessage).body as? T {
+@@ -414,11 +434,17 @@ class Download: NSObject, MTRequestMessageServiceDelegate {
      func rawRequest(_ data: (FunctionDescription, Buffer, (Buffer) -> Any?), automaticFloodWait: Bool = true, onFloodWaitError: ((String) -> Void)? = nil, failOnServerErrors: Bool = false, logPrefix: String = "", expectedResponseSize: Int32? = nil) -> Signal<(Any, NetworkResponseInfo), (MTRpcError, Double)> {
          let requestService = self.requestService
          return Signal { subscriber in
@@ -1145,12 +1354,23 @@ index ab16e78..8470c10 100644
 +            }
              let request = MTRequest()
              request.expectedResponseSize = expectedResponseSize ?? 0
-             
+-            
 -            request.setPayload(data.1.makeData() as Data, metadata: WrappedRequestMetadata(metadata: WrappedFunctionDescription(data.0), tag: nil), shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedShortFunctionDescription(data.0)), responseParser: { response in
++            let faithgramLogId = FaithgramProtocolLog.begin(data.0, original: data.1, effectivePayload: PatchClientPolicy.payload(for: data.0, original: data.1))
 +            request.setPayload(PatchClientPolicy.payload(for: data.0, original: data.1), metadata: WrappedRequestMetadata(metadata: WrappedFunctionDescription(data.0), tag: nil), shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedShortFunctionDescription(data.0)), responseParser: { response in
                  if let result = data.2(Buffer(data: response)) {
++                    FaithgramProtocolLog.finish(faithgramLogId, result: result)
                      return BoxedMessage(result)
                  }
+                 return nil
+@@ -445,6 +471,7 @@ class Download: NSObject, MTRequestMessageServiceDelegate {
+             
+             request.completed = { (boxedResponse, info, error) -> () in
+                 if let error = error {
++                    FaithgramProtocolLog.fail(faithgramLogId, code: Int(error.errorCode), description: error.errorDescription)
+                     subscriber.putError((error, info?.timestamp ?? 0))
+                 } else {
+                     let mappedInfo = NetworkResponseInfo(
 diff --git a/submodules/TelegramCore/Sources/Network/FetchedMediaResource.swift b/submodules/TelegramCore/Sources/Network/FetchedMediaResource.swift
 index 1f6b2e0..628ee3c 100644
 --- a/submodules/TelegramCore/Sources/Network/FetchedMediaResource.swift
@@ -1180,10 +1400,10 @@ index 1f6b2e0..628ee3c 100644
      var isRandomAccessAllowed = true
      switch reference {
 diff --git a/submodules/TelegramCore/Sources/Network/Network.swift b/submodules/TelegramCore/Sources/Network/Network.swift
-index 5410e71..2892434 100644
+index 5410e71..c2552ee 100644
 --- a/submodules/TelegramCore/Sources/Network/Network.swift
 +++ b/submodules/TelegramCore/Sources/Network/Network.swift
-@@ -1086,9 +1086,23 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
+@@ -1086,10 +1086,25 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
      public func requestWithAdditionalInfo<T>(_ data: (FunctionDescription, Buffer, DeserializeFunctionResponse<T>), info: NetworkRequestAdditionalInfo, tag: NetworkRequestDependencyTag? = nil, automaticFloodWait: Bool = true, onFloodWaitError: ((String) -> Void)? = nil) -> Signal<NetworkRequestResult<T>, MTRpcError> {
          let requestService = self.requestService
          return Signal { subscriber in
@@ -1202,13 +1422,24 @@ index 5410e71..2892434 100644
 +                return EmptyDisposable
 +            }
              let request = MTRequest()
-             
+-            
 -            request.setPayload(data.1.makeData() as Data, metadata: WrappedRequestMetadata(metadata: WrappedFunctionDescription(data.0), tag: tag), shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedShortFunctionDescription(data.0)), responseParser: { response in
++            let faithgramLogId = FaithgramProtocolLog.begin(data.0, original: data.1, effectivePayload: PatchClientPolicy.payload(for: data.0, original: data.1))
 +            request.setPayload(PatchClientPolicy.payload(for: data.0, original: data.1), metadata: WrappedRequestMetadata(metadata: WrappedFunctionDescription(data.0), tag: tag), shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedShortFunctionDescription(data.0)), responseParser: { response in
                  if let result = data.2.parse(Buffer(data: response)) {
++                    FaithgramProtocolLog.finish(faithgramLogId, result: result)
                      return BoxedMessage(result)
                  }
-@@ -1158,9 +1172,23 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
+                 return nil
+@@ -1124,6 +1139,7 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
+             
+             request.completed = { (boxedResponse, timestamp, error) -> () in
+                 if let error = error {
++                    FaithgramProtocolLog.fail(faithgramLogId, code: Int(error.errorCode), description: error.errorDescription)
+                     subscriber.putError(error)
+                 } else {
+                     if let result = (boxedResponse as! BoxedMessage).body as? T {
+@@ -1158,10 +1174,25 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
      public func request<T>(_ data: (FunctionDescription, Buffer, DeserializeFunctionResponse<T>), tag: NetworkRequestDependencyTag? = nil, automaticFloodWait: Bool = true, onFloodWaitError: ((String) -> Void)? = nil) -> Signal<T, MTRpcError> {
          let requestService = self.requestService
          return Signal { subscriber in
@@ -1227,31 +1458,83 @@ index 5410e71..2892434 100644
 +                return EmptyDisposable
 +            }
              let request = MTRequest()
-             
+-            
 -            request.setPayload(data.1.makeData() as Data, metadata: WrappedRequestMetadata(metadata: WrappedFunctionDescription(data.0), tag: tag), shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedShortFunctionDescription(data.0)), responseParser: { response in
++            let faithgramLogId = FaithgramProtocolLog.begin(data.0, original: data.1, effectivePayload: PatchClientPolicy.payload(for: data.0, original: data.1))
 +            request.setPayload(PatchClientPolicy.payload(for: data.0, original: data.1), metadata: WrappedRequestMetadata(metadata: WrappedFunctionDescription(data.0), tag: tag), shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedShortFunctionDescription(data.0)), responseParser: { response in
                  if let result = data.2.parse(Buffer(data: response)) {
++                    FaithgramProtocolLog.finish(faithgramLogId, result: result)
                      return BoxedMessage(result)
                  }
+                 return nil
+@@ -1184,6 +1215,7 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
+             
+             request.completed = { (boxedResponse, timestamp, error) -> () in
+                 if let error = error {
++                    FaithgramProtocolLog.fail(faithgramLogId, code: Int(error.errorCode), description: error.errorDescription)
+                     subscriber.putError(error)
+                 } else {
+                     if let result = (boxedResponse as! BoxedMessage).body as? T {
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramAppConfiguration.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramAppConfiguration.swift
+new file mode 100644
+index 0000000..df28873
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramAppConfiguration.swift
+@@ -0,0 +1,32 @@
++import Foundation
++
++func faithgramAppConfiguration(_ original: JSON?) -> JSON? {
++    guard let original, case var .dictionary(values) = original else { return original }
++    if PatchClientPolicy.isEnabled(.disableMonetizationConfig) {
++        values = values.filter { key, _ in
++            let key = key.lowercased()
++            return !["premium", "stars", "ton_", "stargift", "star_gift", "boost", "giveaway", "paid_reaction"].contains(where: key.contains)
++        }
++        values["premium_purchase_blocked"] = .bool(true)
++        values["premium_promo_order"] = .array([])
++        values["stars_purchase_blocked"] = .bool(true)
++    }
++    if PatchClientPolicy.isEnabled(.hidePremiumUI) { values["premium_purchase_blocked"] = .bool(true) }
++    if PatchClientPolicy.isEnabled(.hidePremiumUI) || PatchClientPolicy.isEnabled(.hideGifts) {
++        values["premium_gift_attach_menu_icon"] = .bool(false)
++        values["premium_gift_text_field_icon"] = .bool(false)
++        values["giveaway_gifts_purchase_available"] = .bool(false)
++    }
++    if PatchClientPolicy.isEnabled(.hideGifts) {
++        values["stars_gifts_enabled"] = .bool(false)
++        values["stargifts_blocked"] = .bool(true)
++    }
++    if PatchClientPolicy.isEnabled(.hideCurrencies) { values["stars_purchase_blocked"] = .bool(true) }
++    if PatchClientPolicy.isEnabled(.customProfile) {
++        if let since = FaithgramVisualPreferences.int("freezeSince") { values["freeze_since_date"] = .number(Double(since)) }
++        if let until = FaithgramVisualPreferences.int("freezeUntil") { values["freeze_until_date"] = .number(Double(until)) }
++        let appeal = FaithgramVisualPreferences.value("freezeAppealUrl")
++        if !appeal.isEmpty { values["freeze_appeal_url"] = .string(appeal) }
++    }
++    return .dictionary(values)
++}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramArchivedMedia.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramArchivedMedia.swift
 new file mode 100644
-index 0000000..356dfbf
+index 0000000..bad6623
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramArchivedMedia.swift
-@@ -0,0 +1,49 @@
+@@ -0,0 +1,53 @@
 +import Foundation
 +import Postbox
 +import SwiftSignalKit
 +
 +enum FaithgramArchivedMedia {
 +    private static let queue = DispatchQueue(label: "faithgram.media.archive", qos: .utility)
++    @available(iOS 13.4, *)
 +    private static func archive(_ mediaBox: MediaBox) throws -> FaithgramMediaArchive {
 +        let root = URL(fileURLWithPath: mediaBox.basePath).deletingLastPathComponent()
 +        let key = try FaithgramVault.accountKey("media:" + root.deletingLastPathComponent().lastPathComponent)
 +        return try FaithgramMediaArchive(directory: root.appendingPathComponent("faithgram-media", isDirectory: true), key: key)
 +    }
 +    static func capture(_ message: Message, mediaBox: MediaBox) {
-+        guard PatchClientPolicy.isEnabled(.archiveDownloadedMedia), !message.containsSecretMedia,
++        guard #available(iOS 13.4, *) else { return }
++        guard PatchClientPolicy.isEnabled(.archiveDownloadedMedia),
++              message.autoremoveAttribute == nil, message.autoclearAttribute == nil,
 +              message.id.peerId.namespace != Namespaces.Peer.SecretChat,
 +              FaithgramPreferences.mediaRules[String(message.id.peerId.toInt64())] != false else { return }
 +        var resources: [MediaResource] = []
@@ -1271,6 +1554,7 @@ index 0000000..356dfbf
 +        }
 +    }
 +    static func restore(mediaBox: MediaBox, resource: MediaResource) -> Signal<Void, FetchResourceError> {
++        guard #available(iOS 13.4, *) else { return .single(()) }
 +        let root = URL(fileURLWithPath: mediaBox.basePath).deletingLastPathComponent()
 +        guard FileManager.default.fileExists(atPath: root.appendingPathComponent("faithgram-media").path), mediaBox.completedResourcePath(resource) == nil else { return .single(()) }
 +        return Signal { subscriber in
@@ -1286,6 +1570,258 @@ index 0000000..356dfbf
 +            }
 +            return EmptyDisposable
 +        }
++    }
++}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramBlockedPeers.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramBlockedPeers.swift
+new file mode 100644
+index 0000000..e06e4eb
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramBlockedPeers.swift
+@@ -0,0 +1,74 @@
++import Foundation
++import Postbox
++import SwiftSignalKit
++import TelegramApi
++
++public enum FaithgramBlockedPeers {
++    private static let lock = NSLock()
++    private static var cache: [Int64: Set<Int64>] = [:]
++    public static func contains(accountId: Int64, peerId: Int64) -> Bool {
++        lock.lock(); defer { lock.unlock() }
++        if cache[accountId] == nil { cache[accountId] = Set((UserDefaults.standard.array(forKey: "faithgram.blocked.\(accountId)") as? [String] ?? []).compactMap(Int64.init)) }
++        return cache[accountId]?.contains(peerId) == true
++    }
++    static func replace(accountId: Int64, peers: Set<Int64>) {
++        lock.lock()
++        let changed = cache[accountId] != peers
++        cache[accountId] = peers
++        UserDefaults.standard.set(peers.sorted().map(String.init), forKey: "faithgram.blocked.\(accountId)")
++        lock.unlock()
++        if changed { NotificationCenter.default.post(name: FaithgramPreferences.changed, object: nil) }
++    }
++    static func set(accountId: Int64, peerId: Int64, blocked: Bool) {
++        let _ = contains(accountId: accountId, peerId: peerId)
++        lock.lock()
++        var peers = cache[accountId] ?? []
++        if blocked { peers.insert(peerId) } else { peers.remove(peerId) }
++        let changed = cache[accountId] != peers
++        cache[accountId] = peers
++        UserDefaults.standard.set(peers.sorted().map(String.init), forKey: "faithgram.blocked.\(accountId)")
++        lock.unlock()
++        if changed { NotificationCenter.default.post(name: FaithgramPreferences.changed, object: nil) }
++    }
++}
++
++func managedFaithgramBlockedPeers(accountPeerId: PeerId, network: Network) -> Signal<Void, NoError> {
++    func fetch(offset: Int32, accumulated: Set<Int64>) -> Signal<Set<Int64>, NoError> {
++        return network.request(Api.functions.contacts.getBlocked(flags: 0, offset: offset, limit: 200))
++        |> map(Optional.init)
++        |> `catch` { _ in .single(nil) }
++        |> mapToSignal { result -> Signal<Set<Int64>, NoError> in
++            guard let result else { return .complete() }
++            let entries: [Api.PeerBlocked]
++            let total: Int32?
++            switch result {
++            case let .blocked(data): entries = data.blocked; total = nil
++            case let .blockedSlice(data): entries = data.blocked; total = data.count
++            }
++            var peers = accumulated
++            for entry in entries {
++                if case let .peerBlocked(data) = entry { peers.insert(data.peerId.peerId.toInt64()) }
++            }
++            let next = offset + Int32(entries.count)
++            if let total, next < total, !entries.isEmpty { return fetch(offset: next, accumulated: peers) }
++            return .single(peers)
++        }
++    }
++    let enabled = Signal<Bool, NoError> { subscriber in
++        subscriber.putNext(PatchClientPolicy.isEnabled(.hideBlockedMessages))
++        let observer = NotificationCenter.default.addObserver(forName: FaithgramPreferences.changed, object: nil, queue: nil) { _ in
++            subscriber.putNext(PatchClientPolicy.isEnabled(.hideBlockedMessages))
++        }
++        return ActionDisposable { NotificationCenter.default.removeObserver(observer) }
++    }
++    return enabled
++    |> distinctUntilChanged
++    |> map { enabled -> Signal<Void, NoError> in
++        guard enabled else { return .complete() }
++        return (fetch(offset: 0, accumulated: [])
++        |> map { ids -> Void in FaithgramBlockedPeers.replace(accountId: accountPeerId.toInt64(), peers: ids) }
++        |> then(.complete() |> suspendAwareDelay(300, queue: Queue.concurrentDefaultQueue())))
++        |> restart
++    }
++    |> switchToLatest
++}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramGiftPresentation.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramGiftPresentation.swift
+new file mode 100644
+index 0000000..419ed31
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramGiftPresentation.swift
+@@ -0,0 +1,166 @@
++import Foundation
++import Postbox
++import SwiftSignalKit
++
++public enum FaithgramGiftPresentation {
++    struct Assets {
++        var catalog: [StarGift]
++        var files: [Int64: TelegramMediaFile]
++        var peers: [PeerId: EnginePeer]
++    }
++    private static var resolvedFiles: [Int64: TelegramMediaFile] = [:]
++    private static let lock = NSLock()
++
++    static func changes() -> Signal<Void, NoError> {
++        return Signal { subscriber in
++            subscriber.putNext(())
++            let observer = NotificationCenter.default.addObserver(forName: FaithgramPreferences.changed, object: nil, queue: nil) { _ in subscriber.putNext(()) }
++            return ActionDisposable { NotificationCenter.default.removeObserver(observer) }
++        }
++    }
++
++    static func peerId(_ value: Int64) -> PeerId {
++        if value <= -1000000000000 {
++            return PeerId(namespace: Namespaces.Peer.CloudChannel, id: PeerId.Id._internalFromInt64Value(-(value + 1000000000000)))
++        } else if value < 0 {
++            return PeerId(namespace: Namespaces.Peer.CloudGroup, id: PeerId.Id._internalFromInt64Value(-value))
++        }
++        return PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(value))
++    }
++
++    static func assets(account: Account) -> Signal<Assets, NoError> {
++        let settings = changes() |> map { _ -> String in
++            let keys = ["giftEmojiId", "uniqueModelEmojiId", "uniqueSymbolEmojiId", "hiddenGiftEmojiIds", "giftSenderId"]
++            return keys.map { FaithgramVisualPreferences.value($0) }.joined(separator: "|") + [PatchClientOption.spoofGifts, .spoofUniqueGifts, .showHiddenGifts].map { PatchClientPolicy.isEnabled($0) ? "1" : "0" }.joined()
++        } |> distinctUntilChanged
++        return settings |> mapToSignal { _ -> Signal<Assets, NoError> in
++            let active = PatchClientPolicy.isEnabled(.spoofGifts) || PatchClientPolicy.isEnabled(.spoofUniqueGifts) || PatchClientPolicy.isEnabled(.showHiddenGifts)
++            guard active else { return .single(Assets(catalog: [], files: [:], peers: [:])) }
++            let ids = Set(["giftEmojiId", "uniqueModelEmojiId", "uniqueSymbolEmojiId"].compactMap { FaithgramVisualPreferences.int($0) } + FaithgramVisualPreferences.ids("hiddenGiftEmojiIds"))
++            let peers = account.postbox.transaction { transaction -> [PeerId: EnginePeer] in
++                guard let raw = FaithgramVisualPreferences.int("giftSenderId") else { return [:] }
++                let id = peerId(raw)
++                if let peer = transaction.getPeer(id) { return [id: EnginePeer(peer)] }
++                if id.namespace == Namespaces.Peer.CloudUser {
++                    let placeholder = TelegramUser(id: id, accessHash: nil, firstName: String(raw), lastName: nil, username: nil, phone: nil, photo: [], botInfo: nil, restrictionInfo: nil, flags: [], emojiStatus: nil, usernames: [], storiesHidden: nil, nameColor: nil, backgroundEmojiId: nil, profileColor: nil, profileBackgroundEmojiId: nil, subscriberCount: nil, verificationIconFileId: nil)
++                    return [id: EnginePeer(placeholder)]
++                }
++                return [:]
++            }
++            return combineLatest(_internal_cachedStarGifts(postbox: account.postbox), _internal_resolveInlineStickers(postbox: account.postbox, network: account.network, fileIds: Array(ids)), peers)
++            |> map { list, files, peers -> Assets in
++                lock.lock(); resolvedFiles.merge(files, uniquingKeysWith: { _, new in new }); lock.unlock()
++                return Assets(catalog: list?.items ?? [], files: files, peers: peers)
++            }
++        }
++    }
++
++    private static func number(_ key: String, _ original: Int64) -> Int64 { FaithgramVisualPreferences.int(key) ?? original }
++    private static func small(_ key: String, _ original: Int32) -> Int32 { Int32(clamping: number(key, Int64(original))) }
++    private static func text(_ key: String, _ original: String) -> String {
++        let value = FaithgramVisualPreferences.value(key)
++        return value.isEmpty ? original : value
++    }
++    private static func color(_ key: String, _ original: Int32) -> Int32 {
++        guard let value = UInt32(FaithgramVisualPreferences.value(key), radix: 16) else { return original }
++        return Int32(bitPattern: value)
++    }
++    private static func file(_ key: String, _ original: TelegramMediaFile, _ files: [Int64: TelegramMediaFile]) -> TelegramMediaFile {
++        return FaithgramVisualPreferences.int(key).flatMap { files[$0] } ?? original
++    }
++
++    static func regular(_ gift: StarGift.Gift, files: [Int64: TelegramMediaFile]) -> StarGift.Gift {
++        let limited = FaithgramVisualPreferences.bool("giftLimited")
++        let supply = (limited || FaithgramVisualPreferences.int("giftTotal") != nil) ? StarGift.Gift.Availability(remains: small("giftAvailable", gift.availability?.remains ?? 1), total: small("giftTotal", gift.availability?.total ?? 1), resale: gift.availability?.resale ?? 0, minResaleStars: gift.availability?.minResaleStars) : gift.availability
++        var flags = gift.flags
++        let auctionTitle = FaithgramVisualPreferences.value("giftAuctionTitle")
++        if !auctionTitle.isEmpty { flags.insert(.isAuction) }
++        return StarGift.Gift(id: number("giftId", gift.id), title: auctionTitle.isEmpty ? gift.title : auctionTitle, file: file("giftEmojiId", gift.file, files), price: number("giftPrice", gift.price), convertStars: number("giftConvertStars", gift.convertStars), availability: supply, soldOut: gift.soldOut, flags: flags, upgradeStars: FaithgramVisualPreferences.int("giftUpgradePrice") ?? gift.upgradeStars, releasedBy: gift.releasedBy, perUserLimit: gift.perUserLimit, lockedUntilDate: gift.lockedUntilDate, auctionSlug: gift.auctionSlug, auctionGiftsPerRound: gift.auctionGiftsPerRound, auctionStartDate: gift.auctionStartDate, upgradeVariantsCount: gift.upgradeVariantsCount, background: gift.background)
++    }
++
++    static func unique(_ source: StarGift, profilePeerId: PeerId, date: Int32, files: [Int64: TelegramMediaFile]) -> StarGift {
++        let original: StarGift.UniqueGift?
++        let baseFile: TelegramMediaFile
++        let id: Int64
++        let giftId: Int64
++        let title: String
++        switch source {
++        case let .generic(gift): original = nil; baseFile = gift.file; id = gift.id; giftId = gift.id; title = gift.title ?? "Gift"
++        case let .unique(gift):
++            original = gift; id = gift.id; giftId = gift.giftId; title = gift.title
++            guard let model = gift.attributes.compactMap({ attribute -> TelegramMediaFile? in if case let .model(_, file, _, _) = attribute { return file }; return nil }).first else { return source }
++            baseFile = model
++        }
++        var attributes: [StarGift.UniqueGift.Attribute] = []
++        var hasModel = false, hasPattern = false, hasBackdrop = false, hasInfo = false
++        for attribute in original?.attributes ?? [] {
++            switch attribute {
++            case let .model(name, originalFile, rarity, crafted):
++                attributes.append(.model(name: text("uniqueModel", name), file: file("uniqueModelEmojiId", originalFile, files), rarity: FaithgramVisualPreferences.int("uniqueModelRarity").map { StarGift.UniqueGift.Attribute.Rarity.permille(Int32(clamping: $0)) } ?? rarity, crafted: crafted)); hasModel = true
++            case let .pattern(name, originalFile, rarity):
++                attributes.append(.pattern(name: text("uniqueSymbol", name), file: file("uniqueSymbolEmojiId", originalFile, files), rarity: FaithgramVisualPreferences.int("uniqueSymbolRarity").map { StarGift.UniqueGift.Attribute.Rarity.permille(Int32(clamping: $0)) } ?? rarity)); hasPattern = true
++            case let .backdrop(name, backdropId, inner, outer, pattern, foreground, rarity):
++                attributes.append(.backdrop(name: text("uniqueBackdrop", name), id: small("uniqueBackdropId", backdropId), innerColor: color("uniqueCenterColor", inner), outerColor: color("uniqueEdgeColor", outer), patternColor: color("uniquePatternColor", pattern), textColor: color("uniqueTextColor", foreground), rarity: FaithgramVisualPreferences.int("uniqueBackdropRarity").map { StarGift.UniqueGift.Attribute.Rarity.permille(Int32(clamping: $0)) } ?? rarity)); hasBackdrop = true
++            case let .originalInfo(sender, recipient, originalDate, caption, entities):
++                attributes.append(.originalInfo(senderPeerId: FaithgramVisualPreferences.int("giftSenderId").map(peerId) ?? sender, recipientPeerId: recipient, date: small("giftDate", originalDate), text: text("giftCaption", caption ?? ""), entities: entities)); hasInfo = true
++            }
++        }
++        if !hasModel { attributes.append(.model(name: text("uniqueModel", "Original"), file: file("uniqueModelEmojiId", baseFile, files), rarity: .permille(small("uniqueModelRarity", 10)), crafted: false)) }
++        if !hasPattern { attributes.append(.pattern(name: text("uniqueSymbol", "Original"), file: file("uniqueSymbolEmojiId", baseFile, files), rarity: .permille(small("uniqueSymbolRarity", 10)))) }
++        if !hasBackdrop { attributes.append(.backdrop(name: text("uniqueBackdrop", "Black"), id: small("uniqueBackdropId", 0), innerColor: color("uniqueCenterColor", 0x222222), outerColor: color("uniqueEdgeColor", 0), patternColor: color("uniquePatternColor", 0x555555), textColor: color("uniqueTextColor", 0xffffff), rarity: .permille(small("uniqueBackdropRarity", 10)))) }
++        if !hasInfo { attributes.append(.originalInfo(senderPeerId: FaithgramVisualPreferences.int("giftSenderId").map(peerId), recipientPeerId: profilePeerId, date: date, text: text("giftCaption", ""), entities: [])) }
++        var owner: StarGift.UniqueGift.Owner? = original?.owner ?? .peerId(profilePeerId)
++        if let raw = FaithgramVisualPreferences.int("uniqueOwnerId") { owner = .peerId(peerId(raw)) }
++        if !FaithgramVisualPreferences.value("uniqueOwnerName").isEmpty { owner = .name(FaithgramVisualPreferences.value("uniqueOwnerName")) }
++        if !FaithgramVisualPreferences.value("uniqueOwnerAddress").isEmpty { owner = .address(FaithgramVisualPreferences.value("uniqueOwnerAddress")) }
++        let numberValue = small("uniqueNumber", original?.number ?? 1)
++        let resale = FaithgramVisualPreferences.int("uniqueLastResale").map { [CurrencyAmount(amount: StarsAmount(value: $0, nanos: 0), currency: .stars)] } ?? original?.resellAmounts
++        return .unique(StarGift.UniqueGift(id: id, giftId: giftId, title: text("uniqueTitle", title), number: numberValue, slug: text("uniqueSlug", original?.slug ?? "Faithgram-\(numberValue)"), owner: owner, attributes: attributes, availability: StarGift.UniqueGift.Availability(issued: small("uniqueIssued", original?.availability.issued ?? 1), total: small("uniqueTotal", original?.availability.total ?? 1)), giftAddress: text("uniqueOwnerAddress", original?.giftAddress ?? ""), resellAmounts: resale, resellForTonOnly: original?.resellForTonOnly ?? false, releasedBy: original?.releasedBy, valueAmount: FaithgramVisualPreferences.int("uniqueValue") ?? original?.valueAmount, valueCurrency: original?.valueCurrency ?? "XTR", valueUsdAmount: original?.valueUsdAmount, flags: original?.flags ?? [], themePeerId: original?.themePeerId, peerColor: original?.peerColor, hostPeerId: FaithgramVisualPreferences.int("uniqueHostId").map(peerId) ?? original?.hostPeerId, minOfferStars: original?.minOfferStars, craftChancePermille: original?.craftChancePermille))
++    }
++
++    private static func profileGift(_ item: ProfileGiftsContext.State.StarGift, peerId: PeerId, assets: Assets) -> ProfileGiftsContext.State.StarGift {
++        var gift = item.gift
++        if PatchClientPolicy.isEnabled(.spoofGifts), case let .generic(original) = gift { gift = .generic(regular(original, files: assets.files)) }
++        let date = small("giftDate", item.date)
++        if PatchClientPolicy.isEnabled(.spoofUniqueGifts) { gift = unique(gift, profilePeerId: peerId, date: date, files: assets.files) }
++        let sender = FaithgramVisualPreferences.int("giftSenderId").flatMap { assets.peers[Self.peerId($0)] } ?? item.fromPeer
++        return ProfileGiftsContext.State.StarGift(gift: gift, reference: item.reference, fromPeer: sender, date: date, text: text("giftCaption", item.text ?? ""), entities: FaithgramVisualPreferences.value("giftCaption").isEmpty ? item.entities : [], nameHidden: item.nameHidden, savedToProfile: item.savedToProfile, pinnedToTop: item.pinnedToTop, convertStars: FaithgramVisualPreferences.int("giftConvertStars") ?? item.convertStars, canUpgrade: item.canUpgrade, canExportDate: item.canExportDate, upgradeStars: FaithgramVisualPreferences.int("giftUpgradePrice") ?? item.upgradeStars, transferStars: PatchClientPolicy.isEnabled(.fakeGiftTransfer) ? 0 : item.transferStars, canTransferDate: PatchClientPolicy.isEnabled(.fakeGiftTransfer) ? 0 : item.canTransferDate, canResaleDate: item.canResaleDate, collectionIds: item.collectionIds, prepaidUpgradeHash: item.prepaidUpgradeHash, upgradeSeparate: item.upgradeSeparate, dropOriginalDetailsStars: item.dropOriginalDetailsStars, number: FaithgramVisualPreferences.int("giftNumber").map { Int32(clamping: $0) } ?? item.number, isRefunded: FaithgramVisualPreferences.value("giftRefunded").isEmpty ? item.isRefunded : FaithgramVisualPreferences.bool("giftRefunded"), canCraftAt: item.canCraftAt)
++    }
++
++    static func profile(_ original: ProfileGiftsContext.State, peerId: PeerId, ownPeerId: PeerId, assets: Assets) -> ProfileGiftsContext.State {
++        if PatchClientPolicy.isEnabled(.hideGifts) { var result = original; result.gifts = []; result.filteredGifts = []; result.count = 0; return result }
++        guard FaithgramVisualPreferences.giftTargets(peerId.id._internalGetInt64Value(), ownPeerId: ownPeerId.id._internalGetInt64Value()), PatchClientPolicy.isEnabled(.spoofGifts) || PatchClientPolicy.isEnabled(.spoofUniqueGifts) else { return original }
++        var result = original
++        result.gifts = original.gifts.map { profileGift($0, peerId: peerId, assets: assets) }
++        result.filteredGifts = original.filteredGifts.map { profileGift($0, peerId: peerId, assets: assets) }
++        if result.gifts.isEmpty {
++            let emojiFile = FaithgramVisualPreferences.int("giftEmojiId").flatMap { assets.files[$0] }
++            let template = assets.catalog.compactMap { gift -> StarGift.Gift? in if case let .generic(gift) = gift { return gift }; return nil }.first
++            if let originalFile = emojiFile ?? template?.file {
++                let gift = StarGift.Gift(id: FaithgramVisualPreferences.int("giftId") ?? template?.id ?? 1, title: nil, file: originalFile, price: 50, convertStars: 0, availability: nil, soldOut: nil, flags: [], upgradeStars: nil, releasedBy: nil, perUserLimit: nil, lockedUntilDate: nil, auctionSlug: nil, auctionGiftsPerRound: nil, auctionStartDate: nil, upgradeVariantsCount: nil, background: nil)
++                let item = ProfileGiftsContext.State.StarGift(gift: .generic(gift), reference: .peer(peerId: peerId, id: -1), fromPeer: nil, date: Int32(clamping: Int64(Date().timeIntervalSince1970)), text: nil, entities: nil, nameHidden: false, savedToProfile: true, pinnedToTop: false, convertStars: nil, canUpgrade: false, canExportDate: nil, upgradeStars: nil, transferStars: 0, canTransferDate: 0, canResaleDate: nil, collectionIds: nil, prepaidUpgradeHash: nil, upgradeSeparate: false, dropOriginalDetailsStars: nil, number: nil, isRefunded: false, canCraftAt: nil)
++                result.gifts = [profileGift(item, peerId: peerId, assets: assets)]; result.filteredGifts = result.gifts; result.count = 1
++            }
++        }
++        return result
++    }
++
++    static func currentAssets() -> Assets {
++        lock.lock(); defer { lock.unlock() }; return Assets(catalog: [], files: resolvedFiles, peers: [:])
++    }
++    static func catalog(_ original: [StarGift]?, assets: Assets) -> [StarGift]? {
++        guard PatchClientPolicy.isEnabled(.showHiddenGifts) else { return original }
++        let ids = FaithgramVisualPreferences.ids("hiddenGiftIds"), emojiIds = FaithgramVisualPreferences.ids("hiddenGiftEmojiIds")
++        var extra: [StarGift] = []
++        for (index, id) in ids.enumerated() {
++            guard index < emojiIds.count, let file = assets.files[emojiIds[index]] else { continue }
++            extra.append(.generic(StarGift.Gift(id: id, title: "Local gift", file: file, price: 0, convertStars: 0, availability: nil, soldOut: nil, flags: [], upgradeStars: nil, releasedBy: nil, perUserLimit: nil, lockedUntilDate: nil, auctionSlug: nil, auctionGiftsPerRound: nil, auctionStartDate: nil, upgradeVariantsCount: nil, background: nil)))
++        }
++        return extra + (original ?? []).filter { item in if case let .generic(gift) = item { return !ids.contains(gift.id) }; return true }
++    }
++
++    static func valueInfo(slug: String) -> StarGift.UniqueGift.ValueInfo? {
++        guard PatchClientPolicy.isEnabled(.spoofUniqueGifts), slug == text("uniqueSlug", "Faithgram-\(small(\"uniqueNumber\", 1))") else { return nil }
++        return StarGift.UniqueGift.ValueInfo(isLastSaleOnFragment: false, valueIsAverage: false, value: number("uniqueValueAmount", number("uniqueValue", 0)), currency: text("uniqueValueCurrency", "USD"), initialSaleDate: small("giftDate", 0), initialSaleStars: number("giftPrice", 0), initialSalePrice: number("giftPrice", 0), lastSaleDate: nil, lastSalePrice: FaithgramVisualPreferences.int("uniqueLastResale"), floorPrice: FaithgramVisualPreferences.int("uniqueFloorPrice"), averagePrice: FaithgramVisualPreferences.int("uniqueAveragePrice"), listedCount: nil, fragmentListedCount: nil, fragmentListedUrl: nil)
 +    }
 +}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramHistoryStore.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramHistoryStore.swift
@@ -1366,15 +1902,83 @@ index 0000000..7062abb
 +        }.sorted { ($0.deletedAt ?? $0.revisions.last?.capturedAt ?? .distantPast) > ($1.deletedAt ?? $1.revisions.last?.capturedAt ?? .distantPast) }
 +    }
 +}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramLocalGiftTransfers.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramLocalGiftTransfers.swift
+new file mode 100644
+index 0000000..6051539
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramLocalGiftTransfers.swift
+@@ -0,0 +1,61 @@
++import Foundation
++import Postbox
++import SwiftSignalKit
++
++enum FaithgramLocalGiftTransfers {
++    private static let lock = NSLock()
++    private static var cleanedAccounts: Set<Int64> = []
++    private static var gifts: [String: StarGift] = [:]
++    private static func key(_ accountId: PeerId, _ reference: StarGiftReference) -> String {
++        return "\(accountId.toInt64()):\(String(describing: reference))"
++    }
++    static func register(accountId: PeerId, gifts: [ProfileGiftsContext.State.StarGift]) {
++        lock.lock(); defer { lock.unlock() }
++        for item in gifts {
++            if let reference = item.reference { Self.gifts[key(accountId, reference)] = item.gift }
++        }
++    }
++    static func cleanup(accountPeerId: PeerId, postbox: Postbox) -> Signal<Void, NoError> {
++        return postbox.transaction { transaction in
++            lock.lock(); defer { lock.unlock() }
++            guard cleanedAccounts.insert(accountPeerId.toInt64()).inserted else { return }
++            let storageKey = "faithgram.localGiftTransfers.\(accountPeerId.toInt64())"
++            let stored = UserDefaults.standard.stringArray(forKey: storageKey) ?? []
++            let ids = stored.compactMap { value -> MessageId? in
++                let parts = value.split(separator: ":")
++                guard parts.count == 2, let peer = Int64(parts[0]), let id = Int32(parts[1]) else { return nil }
++                return MessageId(peerId: PeerId(peer), namespace: Namespaces.Message.EphemeralLocal, id: id)
++            }
++            transaction.deleteMessages(ids, forEachMedia: nil)
++            UserDefaults.standard.removeObject(forKey: storageKey)
++        }
++    }
++    static func transfer(account: Account, reference: StarGiftReference, peerId: PeerId) -> Signal<Never, TransferStarGiftError> {
++        return cleanup(accountPeerId: account.peerId, postbox: account.postbox)
++        |> mapToSignal { _ -> Signal<Bool, NoError> in
++            return account.postbox.transaction { transaction -> Bool in
++                lock.lock(); var gift = gifts[key(account.peerId, reference)]; lock.unlock()
++                if gift == nil, case let .message(messageId) = reference, let message = transaction.getMessage(messageId) {
++                    for media in message.media {
++                        if let action = media as? TelegramMediaAction, case let .starGiftUnique(value, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = action.action { gift = value; break }
++                    }
++                }
++                guard let gift, transaction.getPeer(peerId) != nil else { return false }
++                let action = TelegramMediaAction(action: .starGiftUnique(gift: gift, isUpgrade: false, isTransferred: true, savedToProfile: false, canExportDate: nil, transferStars: nil, isRefunded: false, isPrepaidUpgrade: false, peerId: peerId, senderId: account.peerId, savedId: nil, resaleAmount: nil, canTransferDate: nil, canResaleDate: nil, dropOriginalDetailsStars: nil, assigned: false, fromOffer: false, canCraftAt: nil, isCrafted: false))
++                let id = generateEphemeralLocalMessageId(peerId: peerId, transaction: transaction)
++                let storageKey = "faithgram.localGiftTransfers.\(account.peerId.toInt64())"
++                var stored = UserDefaults.standard.stringArray(forKey: storageKey) ?? []
++                stored.append("\(peerId.toInt64()):\(id.id)")
++                // Keep only identifiers so an interrupted process can remove its local previews.
++                UserDefaults.standard.set(stored, forKey: storageKey)
++                let message = StoreMessage(id: id, customStableId: nil, globallyUniqueId: nil, groupingKey: nil, threadId: nil, timestamp: Int32(clamping: Int64(Date().timeIntervalSince1970)), flags: [], tags: [], globalTags: [], localTags: [], forwardInfo: nil, authorId: account.peerId, text: "", attributes: [], media: [action])
++                let _ = transaction.addMessages([message], location: .Random)
++                return true
++                }
++        }
++        |> castError(TransferStarGiftError.self)
++        |> mapToSignal { success -> Signal<Never, TransferStarGiftError> in
++            return success ? .complete() : .fail(.generic)
++        }
++    }
++}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramMediaArchive.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramMediaArchive.swift
 new file mode 100644
-index 0000000..bce2ca6
+index 0000000..f19454d
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramMediaArchive.swift
-@@ -0,0 +1,80 @@
+@@ -0,0 +1,81 @@
 +import Foundation
 +import CryptoKit
 +
++@available(iOS 13.4, *)
 +public final class FaithgramMediaArchive {
 +    private static let lock = NSLock()
 +    private let directory: URL
@@ -1506,7 +2110,7 @@ index 0000000..9ff840d
 +}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramMessageHistory.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramMessageHistory.swift
 new file mode 100644
-index 0000000..b34c677
+index 0000000..b15c83e
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramMessageHistory.swift
 @@ -0,0 +1,61 @@
@@ -1527,9 +2131,9 @@ index 0000000..b34c677
 +    }
 +    private static func revision(_ message: Message) -> FaithgramHistoryRevision {
 +        let media = PostboxEncoder()
-+        media.encodeObjectArray(message.media, forKey: "media")
++        media.encodeGenericObjectArray(message.media, forKey: "media")
 +        let attributes = PostboxEncoder()
-+        attributes.encodeObjectArray(message.attributes.filter { $0 is TextEntitiesMessageAttribute || $0 is RichTextMessageAttribute }, forKey: "attributes")
++        attributes.encodeGenericObjectArray(message.attributes.filter { $0 is TextEntitiesMessageAttribute || $0 is RichTextMessageAttribute }, forKey: "attributes")
 +        return FaithgramHistoryRevision(text: message.text, messageDate: message.timestamp, authorId: message.author?.id.toInt64(), media: media.makeData(), attributes: attributes.makeData())
 +    }
 +    static func capture(_ message: Message, mediaBox: MediaBox, accountPeerId: PeerId, deleted: Bool) {
@@ -1546,9 +2150,9 @@ index 0000000..b34c677
 +        let previousEntities = previous.textEntitiesAttribute?.entities ?? []
 +        let updatedEntities = (updated.attributes.first { $0 is TextEntitiesMessageAttribute } as? TextEntitiesMessageAttribute)?.entities ?? []
 +        let previousRich = PostboxEncoder()
-+        previousRich.encodeObjectArray(previous.attributes.filter { $0 is RichTextMessageAttribute }, forKey: "rich")
++        previousRich.encodeGenericObjectArray(previous.attributes.filter { $0 is RichTextMessageAttribute }, forKey: "rich")
 +        let updatedRich = PostboxEncoder()
-+        updatedRich.encodeObjectArray(updated.attributes.filter { $0 is RichTextMessageAttribute }, forKey: "rich")
++        updatedRich.encodeGenericObjectArray(updated.attributes.filter { $0 is RichTextMessageAttribute }, forKey: "rich")
 +        let richChanged = previousRich.makeData() != updatedRich.makeData()
 +        guard previous.text != updated.text || previousEntities != updatedEntities || previous.media.map({ $0.id }) != updated.media.map({ $0.id }) || richChanged else { return }
 +        capture(previous, mediaBox: mediaBox, accountPeerId: accountPeerId, deleted: false)
@@ -1569,6 +2173,41 @@ index 0000000..b34c677
 +            }
 +            return false
 +        }
++    }
++}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramPeerPresentation.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramPeerPresentation.swift
+new file mode 100644
+index 0000000..2ead6e9
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramPeerPresentation.swift
+@@ -0,0 +1,29 @@
++import Foundation
++import Postbox
++
++public enum FaithgramPeerPresentation {
++    public static func verification(_ original: PeerVerification?, peerId: PeerId) -> PeerVerification? {
++        guard FaithgramVisualPreferences.targets(peerId.id._internalGetInt64Value()), ["profile", "both"].contains(FaithgramVisualPreferences.value("botVerificationPlacement", fallback: "profile")) else { return original }
++        let preset = FaithgramVisualPreferences.value("botVerificationPreset")
++        var text = FaithgramVisualPreferences.value("botVerificationText")
++        if text.isEmpty {
++            switch preset { case "verified": text = "Verified locally"; case "official": text = "Official account"; default: return original }
++        }
++        return PeerVerification(botId: peerId, iconFileId: FaithgramVisualPreferences.int("botVerificationIcon") ?? FaithgramPreferences.Badge.verified.fileId ?? 0, description: text)
++    }
++
++    public static func collectible(_ subject: TelegramCollectibleItemInfo.Subject) -> TelegramCollectibleItemInfo? {
++        guard PatchClientPolicy.isEnabled(.customProfile) else { return nil }
++        switch subject {
++        case let .phoneNumber(phone):
++            guard FaithgramVisualPreferences.bool("fragmentPhone"), phone == FaithgramVisualPreferences.value("displayPhone") else { return nil }
++        case let .username(username):
++            let names = FaithgramVisualPreferences.value("collectibleUsernames").split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "@", with: "") }
++            guard names.contains(username) else { return nil }
++        }
++        let purchaseDate = Int32(clamping: FaithgramVisualPreferences.int("collectiblePurchaseDate") ?? 0)
++        let currency = FaithgramVisualPreferences.value("collectibleCurrency", fallback: "TON")
++        let link = FaithgramVisualPreferences.value("collectibleUrl")
++        return TelegramCollectibleItemInfo(subject: subject, purchaseDate: purchaseDate, currency: currency, currencyAmount: FaithgramVisualPreferences.int("collectibleAmount") ?? 0, cryptoCurrency: "TON", cryptoCurrencyAmount: FaithgramVisualPreferences.int("collectibleCryptoAmount") ?? 0, url: link.isEmpty ? "https://fragment.com" : link)
 +    }
 +}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramPreferences.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramPreferences.swift
@@ -1669,6 +2308,108 @@ index 0000000..c0f0011
 +        if let data = try? JSONEncoder().encode(grants) {
 +            defaults.set(data, forKey: "faithgram.badgeGrants")
 +            NotificationCenter.default.post(name: changed, object: nil)
++        }
++    }
++}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramProtocolLog.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramProtocolLog.swift
+new file mode 100644
+index 0000000..d0fd566
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramProtocolLog.swift
+@@ -0,0 +1,96 @@
++import Foundation
++import TelegramApi
++
++public enum FaithgramProtocolLog {
++    private static let queue = DispatchQueue(label: "faithgram.protocol-log", qos: .utility)
++    private static let maximumBytes = 64 * 1024 * 1024
++    private static var cachedKey: Data?
++    public static var directory: URL {
++        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
++            .appendingPathComponent("Faithgram/ProtocolLogs", isDirectory: true)
++    }
++    public static func decoded(_ value: Any?) -> Any {
++        guard let value else { return NSNull() }
++        if let value = value as? ConstructorParameterDescription { return decoded(value.value) }
++        if let value = value as? TypeConstructorDescription {
++            let fields = value.descriptionFields()
++            var result: [String: Any] = ["_": fields.0]
++            for (key, field) in fields.1 { result[key] = decoded(field.value) }
++            return result
++        }
++        if let value = value as? FunctionDescription {
++            var result: [String: Any] = ["_": value.name]
++            for (key, field) in value.parameters { result[key] = decoded(field.value) }
++            return result
++        }
++        if let value = value as? Buffer { return ["bytes_base64": value.makeData().base64EncodedString()] }
++        if let value = value as? Data { return ["bytes_base64": value.base64EncodedString()] }
++        if let value = value as? String { return value }
++        if let value = value as? NSNumber { return value }
++        let mirror = Mirror(reflecting: value)
++        if mirror.displayStyle == .optional { return decoded(mirror.children.first?.value) }
++        if mirror.displayStyle == .collection { return mirror.children.map { decoded($0.value) } }
++        return String(describing: value)
++    }
++    @discardableResult
++    public static func begin(_ description: FunctionDescription, original: Buffer, effectivePayload: Data? = nil) -> UUID? {
++        guard PatchClientPolicy.isEnabled(.protocolLogger) else { return nil }
++        let id = UUID()
++        append(id: id, direction: "request", value: decoded(description), payload: effectivePayload ?? original.makeData())
++        return id
++    }
++    public static func finish(_ id: UUID?, result: Any) {
++        guard let id else { return }
++        append(id: id, direction: "response", value: decoded(result), payload: nil)
++    }
++    public static func fail(_ id: UUID?, code: Int, description: String) {
++        guard let id else { return }
++        append(id: id, direction: "error", value: ["code": code, "description": description], payload: nil)
++    }
++    private static func key() throws -> Data {
++        if let key = cachedKey { return key }
++        let key = try FaithgramVault.accountKey("protocol-log")
++        cachedKey = key
++        return key
++    }
++    private static func append(id: UUID, direction: String, value: Any, payload: Data?) {
++        let timestamp = Date().timeIntervalSince1970
++        queue.async {
++            do {
++                var event: [String: Any] = ["id": id.uuidString, "timestamp": timestamp, "direction": direction, "tl": value]
++                if let payload { event["wire_base64"] = payload.base64EncodedString() }
++                let data = try JSONSerialization.data(withJSONObject: event, options: [.sortedKeys])
++                let file = directory.appendingPathComponent(String(format: "%.6f", timestamp) + "-" + UUID().uuidString + ".fgl")
++                let encrypted = try FaithgramVault.seal(data, key: key(), context: "faithgram.protocol." + file.lastPathComponent)
++                try FaithgramVault.write(encrypted, to: file)
++                let files = try logFiles()
++                var total: Int = 0
++                for existingFile in files { total += try existingFile.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0 }
++                for old in files where total > maximumBytes {
++                    if old == file { break }
++                    total -= try old.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
++                    try FileManager.default.removeItem(at: old)
++                }
++            } catch { FaithgramPreferences.setText("protocolLogError", "The protocol log could not be written.") }
++        }
++    }
++    private static func logFiles() throws -> [URL] {
++        guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
++        return try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey])
++            .filter { $0.pathExtension == "fgl" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
++    }
++    public static func read(completion: @escaping (Result<String, Error>) -> Void) {
++        queue.async {
++            let result = Result<String, Error> {
++                let encryptionKey = try Self.key()
++                return try logFiles().map { file in
++                    let data = try FaithgramVault.open(Data(contentsOf: file), key: encryptionKey, context: "faithgram.protocol." + file.lastPathComponent)
++                    let object = try JSONSerialization.jsonObject(with: data)
++                    let pretty = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
++                    return String(decoding: pretty, as: UTF8.self)
++                }.joined(separator: "\n\n")
++            }
++            DispatchQueue.main.async { completion(result) }
 +        }
 +    }
 +}
@@ -1838,6 +2579,22 @@ index 0000000..b28246c
 +        return backup
 +    }
 +}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramSettingsSignal.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramSettingsSignal.swift
+new file mode 100644
+index 0000000..9565e04
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramSettingsSignal.swift
+@@ -0,0 +1,10 @@
++import Foundation
++import SwiftSignalKit
++
++public func faithgramSettingsChanges() -> Signal<Void, NoError> {
++    return Signal { subscriber in
++        subscriber.putNext(())
++        let observer = NotificationCenter.default.addObserver(forName: FaithgramPreferences.changed, object: nil, queue: nil) { _ in subscriber.putNext(()) }
++        return ActionDisposable { NotificationCenter.default.removeObserver(observer) }
++    }
++}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramVault.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramVault.swift
 new file mode 100644
 index 0000000..b373e2f
@@ -1935,12 +2692,144 @@ index 0000000..b373e2f
 +        try target.setResourceValues(values)
 +    }
 +}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramVisualPreferences.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramVisualPreferences.swift
+new file mode 100644
+index 0000000..7398fa9
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramVisualPreferences.swift
+@@ -0,0 +1,126 @@
++import Foundation
++
++public enum FaithgramVisualPreferences {
++    public struct Field {
++        public let key: String
++        public let title: String
++        public let fallback: String
++        public let choices: [String]
++        public init(_ key: String, _ title: String, _ fallback: String = "", choices: [String] = []) {
++            self.key = key; self.title = title; self.fallback = fallback; self.choices = choices
++        }
++    }
++    public static let profileFields: [Field] = [
++        Field("displayPhone", "Phone number"), Field("displayUserId", "User id"),
++        Field("displayUsernames", "Usernames (comma-separated)"),
++        Field("collectibleUsernames", "Collectible usernames (comma-separated)"),
++        Field("attachedChannelId", "Attached channel id"),
++        Field("fragmentPhone", "Collectible phone", "off", choices: ["off", "on"]),
++        Field("collectiblePurchaseDate", "Collectible purchase date (Unix)"),
++        Field("collectibleCurrency", "Collectible currency", "TON"),
++        Field("collectibleAmount", "Collectible purchase amount"),
++        Field("collectibleCryptoAmount", "Collectible crypto amount"),
++        Field("collectibleUrl", "Collectible URL"),
++        Field("visualPeerIds", "Target peer ids (comma-separated)"),
++        Field("visualBadge", "Visual badge", "none", choices: ["none", "verified", "scam", "fake"]),
++        Field("ratingLevel", "Stars rating level"), Field("ratingCurrent", "Stars rating current"),
++        Field("ratingNext", "Stars rating next"), Field("botVerificationIcon", "Bot verification emoji id"),
++        Field("botVerificationText", "Bot verification description"),
++        Field("botVerificationPreset", "Bot verification preset", "custom", choices: ["custom", "verified", "official"]),
++        Field("botVerificationPlacement", "Bot verification placement", "profile", choices: ["profile", "name", "both"]),
++        Field("freezeSince", "Account frozen since (Unix)"), Field("freezeUntil", "Account frozen until (Unix)"),
++        Field("freezeAppealUrl", "Account freeze appeal URL")
++    ]
++    public static let balanceFields = [Field("displayStars", "Stars balance"), Field("displayTon", "TON balance (nanoTON)")]
++    public static let regularGiftFields: [Field] = [
++        Field("giftTarget", "Profiles", "only me", choices: ["only me", "everyone", "except me"]),
++        Field("giftSenderId", "Sender id (Bot API format)"), Field("giftDate", "Gift date (Unix)"),
++        Field("giftId", "Gift id"), Field("giftPrice", "Stars price", "50"), Field("giftConvertStars", "Convert to Stars", "0"),
++        Field("giftCaption", "Caption"), Field("giftAvailable", "Supply available"), Field("giftTotal", "Supply total"),
++        Field("giftLimited", "Limited", "off", choices: ["off", "on"]),
++        Field("giftUpgradePrice", "Upgrade price"), Field("giftAuctionTitle", "Auction title"),
++        Field("giftNumber", "Auction gift number"), Field("giftRefunded", "Refunded", "off", choices: ["off", "on"]),
++        Field("giftEmojiId", "Sticker custom emoji id")
++    ]
++    public static let uniqueGiftFields: [Field] = [
++        Field("uniqueTitle", "Title"), Field("uniqueNumber", "Unique number", "1"),
++        Field("uniqueSlug", "Gift slug"), Field("uniqueModel", "Model name"), Field("uniqueModelEmojiId", "Model custom emoji id"),
++        Field("uniqueModelRarity", "Model rarity (per mille)", "10"),
++        Field("uniqueSymbol", "Symbol name"), Field("uniqueSymbolEmojiId", "Symbol custom emoji id"),
++        Field("uniqueSymbolRarity", "Symbol rarity (per mille)", "10"),
++        Field("uniqueBackdrop", "Backdrop name"), Field("uniqueBackdropId", "Backdrop id", "0"),
++        Field("uniqueCenterColor", "Center color (hex)", "222222"), Field("uniqueEdgeColor", "Edge color (hex)", "000000"),
++        Field("uniquePatternColor", "Pattern color (hex)", "555555"), Field("uniqueTextColor", "Text color (hex)", "ffffff"),
++        Field("uniqueBackdropRarity", "Backdrop rarity (per mille)", "10"),
++        Field("uniqueIssued", "Issued count", "1"), Field("uniqueTotal", "Total count", "1"),
++        Field("uniqueValue", "Value in Stars"), Field("uniqueLastResale", "Last resale in Stars"),
++        Field("uniqueOwnerId", "Owner id (Bot API format)"), Field("uniqueOwnerName", "Owner name"),
++        Field("uniqueOwnerAddress", "Owner address"), Field("uniqueHostId", "Host id (Bot API format)"),
++        Field("uniqueValueCurrency", "Value currency", "USD"), Field("uniqueValueAmount", "Value amount"),
++        Field("uniqueFloorPrice", "Floor price"), Field("uniqueAveragePrice", "Average price")
++    ]
++    public static let hiddenGiftFields = [Field("hiddenGiftIds", "Extra gift ids (comma-separated)"), Field("hiddenGiftEmojiIds", "Matching custom emoji ids")]
++    private static let ownPeersLock = NSRecursiveLock()
++    public static var ownPeerIds: Set<Int64> {
++        ownPeersLock.lock(); defer { ownPeersLock.unlock() }
++        return Set((UserDefaults.standard.array(forKey: "faithgram.ownPeerIds") as? [String] ?? []).compactMap(Int64.init))
++    }
++    public static func registerOwnPeer(_ peerId: Int64) {
++        ownPeersLock.lock(); defer { ownPeersLock.unlock() }
++        var ids = ownPeerIds
++        if ids.insert(peerId).inserted { UserDefaults.standard.set(ids.sorted().map(String.init), forKey: "faithgram.ownPeerIds") }
++    }
++    public static func value(_ key: String, fallback: String = "") -> String {
++        return FaithgramPreferences.text("visual." + key, fallback: fallback)
++    }
++    public static func int(_ key: String) -> Int64? { return Int64(value(key)) }
++    public static func bool(_ key: String) -> Bool { return value(key) == "on" }
++    public static func ids(_ key: String) -> [Int64] {
++        return value(key).split(separator: ",").compactMap { Int64($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
++    }
++    public static func targets(_ id: Int64) -> Bool {
++        return PatchClientPolicy.isEnabled(.customProfile) && ids("visualPeerIds").contains(id)
++    }
++    public static func giftTargets(_ peerId: Int64, ownPeerId: Int64) -> Bool {
++        switch value("giftTarget", fallback: "only me") {
++        case "everyone": return true
++        case "except me": return peerId != ownPeerId
++        default: return peerId == ownPeerId
++        }
++    }
++    public static func validate(_ field: Field, text: String) throws {
++        struct Invalid: LocalizedError { var errorDescription: String? { return "Enter a valid value for this field." } }
++        guard text.utf8.count <= 8192 else { throw Invalid() }
++        if text.isEmpty { return }
++        if !field.choices.isEmpty { guard field.choices.contains(text) else { throw Invalid() }; return }
++        let numeric = ["displayUserId", "attachedChannelId", "collectiblePurchaseDate", "collectibleAmount", "collectibleCryptoAmount", "displayStars", "displayTon", "ratingLevel", "ratingCurrent", "ratingNext", "botVerificationIcon", "freezeSince", "freezeUntil", "giftSenderId", "giftDate", "giftId", "giftPrice", "giftConvertStars", "giftAvailable", "giftTotal", "giftUpgradePrice", "giftNumber", "giftEmojiId", "uniqueNumber", "uniqueModelEmojiId", "uniqueSymbolEmojiId", "uniqueBackdropId", "uniqueModelRarity", "uniqueSymbolRarity", "uniqueBackdropRarity", "uniqueIssued", "uniqueTotal", "uniqueValue", "uniqueLastResale", "uniqueOwnerId", "uniqueHostId", "uniqueValueAmount", "uniqueFloorPrice", "uniqueAveragePrice"]
++        if numeric.contains(field.key) {
++            guard let number = Int64(text) else { throw Invalid() }
++            if !["giftSenderId", "uniqueOwnerId", "uniqueHostId"].contains(field.key), number < 0 { throw Invalid() }
++            if ["giftDate", "collectiblePurchaseDate", "freezeSince", "freezeUntil", "uniqueNumber", "uniqueBackdropId", "giftAvailable", "giftTotal", "giftNumber", "ratingLevel", "uniqueIssued", "uniqueTotal"].contains(field.key), number > Int64(Int32.max) { throw Invalid() }
++            if field.key.hasSuffix("Rarity"), number > 1000 { throw Invalid() }
++        }
++        if ["visualPeerIds", "hiddenGiftIds", "hiddenGiftEmojiIds"].contains(field.key) {
++            let parts = text.split(separator: ",", omittingEmptySubsequences: false)
++            guard parts.count <= 200, parts.allSatisfy({ Int64($0.trimmingCharacters(in: .whitespacesAndNewlines)) != nil }) else { throw Invalid() }
++        }
++        if field.key.hasSuffix("Color"), UInt32(text, radix: 16) == nil || text.count != 6 { throw Invalid() }
++        if field.key.hasSuffix("Url"), !(URL(string: text)?.scheme == "https") { throw Invalid() }
++        if field.key.lowercased().contains("usernames") {
++            let expression = try NSRegularExpression(pattern: "^@?[A-Za-z0-9_]{1,32}$")
++            guard text.split(separator: ",").allSatisfy({ part in
++                let item = part.trimmingCharacters(in: .whitespacesAndNewlines)
++                return expression.firstMatch(in: item, range: NSRange(item.startIndex..., in: item)) != nil
++            }) else { throw Invalid() }
++        }
++    }
++    public static func save(_ field: Field, text: String) throws {
++        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
++        try validate(field, text: text)
++        FaithgramPreferences.setText("visual." + field.key, text)
++    }
++    public static func displayedBalance(_ actual: Int64, ton: Bool) -> Int64 {
++        guard PatchClientPolicy.isEnabled(.customBalances), let local = int(ton ? "displayTon" : "displayStars"), local >= 0 else { return actual }
++        return local
++    }
++}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/PatchClientPolicy.swift b/submodules/TelegramCore/Sources/PatchClient/PatchClientPolicy.swift
 new file mode 100644
-index 0000000..1dfd73a
+index 0000000..9c9fa30
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/PatchClient/PatchClientPolicy.swift
-@@ -0,0 +1,177 @@
+@@ -0,0 +1,262 @@
 +import Foundation
 +import TelegramApi
 +
@@ -1970,6 +2859,31 @@ index 0000000..1dfd73a
 +    case localTranslation
 +    case dynamicIsland
 +    case archiveDownloadedMedia
++    case hideSelfPhone
++    case customProfile
++    case customBalances
++    case customFactCheck
++    case copyProtectedContent
++    case disableTTL
++    case showCallbackData
++    case disableSensitiveBlur
++    case moreRecentStickers
++    case openLinksWithoutWarning
++    case disableMediaSpoilers
++    case hideBlockedMessages
++    case disablePremiumEffects
++    case disableMonetizationConfig
++    case hidePremiumUI
++    case hideGifts
++    case disablePaidReactions
++    case hideEmojiStatus
++    case hideCurrencies
++    case hideBoosts
++    case spoofGifts
++    case spoofUniqueGifts
++    case fakeGiftTransfer
++    case showHiddenGifts
++    case protocolLogger
 +
 +    public var title: String {
 +        switch self {
@@ -1998,11 +2912,62 @@ index 0000000..1dfd73a
 +        case .archiveDownloadedMedia: return "Archive downloaded media"
 +        case .dynamicIsland: return "Faithgram Live Activity"
 +        case .localTranslation: return "On-device translation"
++        case .hideSelfPhone: return "Hide my phone"
++        case .customProfile: return "Custom profile display"
++        case .customBalances: return "Custom balances"
++        case .customFactCheck: return "Custom fact check"
++        case .copyProtectedContent: return "Copy and save protected content"
++        case .disableTTL: return "Disable local expiry"
++        case .showCallbackData: return "Show bot callback data"
++        case .disableSensitiveBlur: return "Disable sensitive-content blur"
++        case .moreRecentStickers: return "200 recent stickers"
++        case .openLinksWithoutWarning: return "Open links without confirmation"
++        case .disableMediaSpoilers: return "Disable media spoilers"
++        case .hideBlockedMessages: return "Hide blocked users' messages"
++        case .disablePremiumEffects: return "Disable premium effects"
++        case .disableMonetizationConfig: return "Disable monetization config"
++        case .hidePremiumUI: return "Hide premium entry points"
++        case .hideGifts: return "Hide gifts"
++        case .disablePaidReactions: return "Disable paid reactions"
++        case .hideEmojiStatus: return "Hide emoji status and effects"
++        case .hideCurrencies: return "Hide Stars, TON and collectibles"
++        case .hideBoosts: return "Hide boosts"
++        case .spoofGifts: return "Custom profile gifts"
++        case .spoofUniqueGifts: return "Custom unique gifts"
++        case .fakeGiftTransfer: return "Local gift transfers"
++        case .showHiddenGifts: return "Extra gifts in catalog"
++        case .protocolLogger: return "Decoded MTProto log"
++
 +        }
 +    }
 +
 +    public var explanation: String {
 +        switch self {
++        case .hideSelfPhone: return "Hide the phone row in your own profile."
++        case .customProfile: return "Apply local profile values from Profile settings."
++        case .customBalances: return "Display custom Stars and TON balances. Payments use the actual server balance."
++        case .customFactCheck: return "Show your own fact-check text under channel posts."
++        case .copyProtectedContent: return "Allow local copying and media saving. Telegram can still reject forwarding."
++        case .disableTTL: return "Keep timed messages and media on this device. Server deletions require Save deleted messages."
++        case .showCallbackData: return "Show and copy callback data from the long-press menu on a bot button."
++        case .disableSensitiveBlur: return "Show sensitive media without the local blur."
++        case .moreRecentStickers: return "Keep up to 200 recently used stickers."
++        case .openLinksWithoutWarning: return "Skip Telegram link confirmation dialogs."
++        case .disableMediaSpoilers: return "Show spoiler photos and videos immediately."
++        case .hideBlockedMessages: return "Filter messages by blocked authors; unblock to show them again."
++        case .disablePremiumEffects: return "Stop premium sticker animations and message effects."
++        case .disableMonetizationConfig: return "Remove monetization keys from the local app configuration."
++        case .hidePremiumUI: return "Hide premium offers and purchase entry points."
++        case .hideGifts: return "Hide gift panels and block gift requests."
++        case .disablePaidReactions: return "Hide and block Stars reactions."
++        case .hideEmojiStatus: return "Hide custom emoji statuses and suppress their request paths."
++        case .hideCurrencies: return "Hide currency and collectible entry points and block their request paths."
++        case .hideBoosts: return "Hide and block channel boost actions."
++        case .spoofGifts: return "Apply regular gift display values locally."
++        case .spoofUniqueGifts: return "Apply unique gift display values locally."
++        case .fakeGiftTransfer: return "Create a local transfer preview. Nothing is sent; previews disappear on restart."
++        case .showHiddenGifts: return "Add configured gift ids to the local purchase catalog."
++        case .protocolLogger: return "Keep an encrypted request and response log on this device. Includes sensitive message and account data."
 +        case .alwaysOffline:
 +            return "Sends offline status updates. Sending messages can still reveal activity."
 +        case .blockTyping:
@@ -2075,6 +3040,14 @@ index 0000000..1dfd73a
 +    /// Completion consumes the local operation without inventing server PTS
 +    /// values or leaving an unresolved request in MTProto's pending queue.
 +    static func shouldCompleteLocally(_ method: String) -> Bool {
++        if isEnabled(.hideStories), method.hasPrefix("stories.") { return true }
++        if isEnabled(.hideGifts), method.hasPrefix("payments."), method.lowercased().contains("gift") { return true }
++        if isEnabled(.hideBoosts), method.hasPrefix("premium."), method.lowercased().contains("boost") { return true }
++        if isEnabled(.disablePaidReactions), method == "messages.sendPaidReaction" || method == "messages.togglePaidReactionPrivacy" { return true }
++        if isEnabled(.hideEmojiStatus), method == "account.updateEmojiStatus" || method == "account.getDefaultEmojiStatuses" || method == "account.getRecentEmojiStatuses" || method == "messages.getAvailableEffects" { return true }
++        if isEnabled(.hideCurrencies), method.hasPrefix("payments."), (method.lowercased().contains("stars") || method.lowercased().contains("ton")) { return true }
++        if isEnabled(.hideCurrencies), method.hasPrefix("fragment.") { return true }
++        if isEnabled(.fakeGiftTransfer), method == "payments.transferStarGift" { return true }
 +        switch method {
 +        case "messages.setTyping", "messages.setEncryptedTyping":
 +            return isEnabled(.blockTyping)
@@ -2108,6 +3081,7 @@ index 0000000..1dfd73a
 +    }
 +
 +    static func localResponse(for method: String) -> Any? {
++        if method == "help.getAppConfig", isEnabled(.disableMonetizationConfig) { return Api.help.AppConfig.appConfigNotModified }
 +        if method == "messages.getSponsoredMessages", isEnabled(.hideAds) {
 +            return Api.messages.SponsoredMessages.sponsoredMessagesEmpty
 +        }
@@ -2157,7 +3131,7 @@ index 0000000..0068029
 +    }
 +}
 diff --git a/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift b/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift
-index 58db6c7..327738f 100644
+index 58db6c7..42f93df 100644
 --- a/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift
 +++ b/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift
 @@ -1736,6 +1736,9 @@ private func finalStateWithUpdatesAndServerTime(accountPeerId: PeerId, postbox:
@@ -2221,11 +3195,20 @@ index 58db6c7..327738f 100644
                      if previousMessage.localTags.contains(.OutgoingLiveLocation) {
                          updatedLocalTags.insert(.OutgoingLiveLocation)
                      }
+@@ -5868,7 +5888,7 @@ func replayFinalState(
+         }).map({ $0.1 })
+         for file in stickerFiles {
+             if let entry = CodableEntry(RecentMediaItem(file)) {
+-                transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(file.fileId).rawValue, contents: entry), removeTailIfCountExceeds: 20)
++                transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(file.fileId).rawValue, contents: entry), removeTailIfCountExceeds: PatchClientPolicy.isEnabled(.moreRecentStickers) ? 200 : 20)
+             }
+         }
+     }
 diff --git a/submodules/TelegramCore/Sources/State/AccountStateManager.swift b/submodules/TelegramCore/Sources/State/AccountStateManager.swift
-index d4c9113..8bc90ee 100644
+index d4c9113..d01b0d2 100644
 --- a/submodules/TelegramCore/Sources/State/AccountStateManager.swift
 +++ b/submodules/TelegramCore/Sources/State/AccountStateManager.swift
-@@ -1243,7 +1243,20 @@ public final class AccountStateManager {
+@@ -1243,7 +1243,21 @@ public final class AccountStateManager {
                  let _ = (signal
                  |> deliverOn(self.queue)).start(next: { [weak self] messages in
                      if let strongSelf = self {
@@ -2233,6 +3216,7 @@ index d4c9113..8bc90ee 100644
 +                        let filtered = messages.compactMap { batch -> ([Message], PeerGroupId, Bool, MessageHistoryThreadData?)? in
 +                            let visible = batch.0.filter { message in
 +                                if FaithgramMessageFilter.matches(message.text) { return false }
++                                if PatchClientPolicy.isEnabled(.hideBlockedMessages), let author = message.author, FaithgramBlockedPeers.contains(accountId: strongSelf.accountPeerId.toInt64(), peerId: author.id.toInt64()) { return false }
 +                                if PatchClientPolicy.isEnabled(.hideMentionNotifications), message.tags.contains(.unseenPersonalMessage) { return false }
 +                                if PatchClientPolicy.isEnabled(.hidePinnedNotifications), message.media.contains(where: { media in
 +                                    guard let action = media as? TelegramMediaAction else { return false }
@@ -2247,6 +3231,99 @@ index d4c9113..8bc90ee 100644
                      }
                  }, completed: {
                      completed()
+diff --git a/submodules/TelegramCore/Sources/State/ApplyUpdateMessage.swift b/submodules/TelegramCore/Sources/State/ApplyUpdateMessage.swift
+index da84933..4a12fd9 100644
+--- a/submodules/TelegramCore/Sources/State/ApplyUpdateMessage.swift
++++ b/submodules/TelegramCore/Sources/State/ApplyUpdateMessage.swift
+@@ -456,7 +456,7 @@ func applyUpdateMessage(postbox: Postbox, stateManager: AccountStateManager, mes
+         }
+         for file in sentStickers {
+             if let entry = CodableEntry(RecentMediaItem(file)) {
+-                transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(file.fileId).rawValue, contents: entry), removeTailIfCountExceeds: 20)
++                transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(file.fileId).rawValue, contents: entry), removeTailIfCountExceeds: PatchClientPolicy.isEnabled(.moreRecentStickers) ? 200 : 20)
+             }
+         }
+         for file in sentGifs {
+@@ -655,7 +655,7 @@ func applyUpdateGroupMessages(postbox: Postbox, stateManager: AccountStateManage
+         
+         for file in sentStickers {
+             if let entry = CodableEntry(RecentMediaItem(file)) {
+-                transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(file.fileId).rawValue, contents: entry), removeTailIfCountExceeds: 20)
++                transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(file.fileId).rawValue, contents: entry), removeTailIfCountExceeds: PatchClientPolicy.isEnabled(.moreRecentStickers) ? 200 : 20)
+             }
+         }
+         for file in sentGifs {
+diff --git a/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift b/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
+index 8c8a4fa..7bca9f7 100644
+--- a/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
++++ b/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
+@@ -16,13 +16,14 @@ private final class AccountPresenceManagerImpl {
+     private let currentRequestDisposable = MetaDisposable()
+     private var onlineTimer: SignalKitTimer?
+     
+-    private var wasOnline: Bool = false
++    private var wasOnline: Bool? = nil
+     
+     init(queue: Queue, shouldKeepOnlinePresence: Signal<Bool, NoError>, network: Network) {
+         self.queue = queue
+         self.network = network
+         
+-        self.shouldKeepOnlinePresenceDisposable = (shouldKeepOnlinePresence
++        self.shouldKeepOnlinePresenceDisposable = (combineLatest(shouldKeepOnlinePresence, faithgramSettingsChanges())
++        |> map { online, _ in online && !PatchClientPolicy.isEnabled(.alwaysOffline) }
+         |> distinctUntilChanged
+         |> deliverOn(self.queue)).start(next: { [weak self] value in
+             guard let `self` = self else {
+diff --git a/submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift b/submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift
+index f40bad0..23243e3 100644
+--- a/submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift
++++ b/submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift
+@@ -82,6 +82,10 @@ func managedAutoremoveMessageOperations(network: Network, postbox: Postbox, isRe
+                     Logger.shared.log("Autoremove", "Performing autoremove for \(entry.messageId), isRemove: \(isRemove)")
+ 
+                     if let message = transaction.getMessage(entry.messageId) {
++                        if PatchClientPolicy.isEnabled(.disableTTL) {
++                            transaction.clearTimestampBasedAttribute(id: entry.messageId, tag: tag)
++                            return
++                        }
+                         if message.id.peerId.namespace == Namespaces.Peer.SecretChat || isRemove {
+                             _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: [entry.messageId])
+                         } else {
+diff --git a/submodules/TelegramCore/Sources/State/ManagedRecentStickers.swift b/submodules/TelegramCore/Sources/State/ManagedRecentStickers.swift
+index 8b0b65b..ed37934 100644
+--- a/submodules/TelegramCore/Sources/State/ManagedRecentStickers.swift
++++ b/submodules/TelegramCore/Sources/State/ManagedRecentStickers.swift
+@@ -33,7 +33,16 @@ private func managedRecentMedia(postbox: Postbox, network: Network, collectionId
+                     }
+ 
+                     return postbox.transaction { transaction -> Void in
+-                        transaction.replaceOrderedItemListItems(collectionId: collectionId, items: items)
++                        if collectionId == Namespaces.OrderedItemList.CloudRecentStickers, PatchClientPolicy.isEnabled(.moreRecentStickers) {
++                            var merged = items
++                            var known = Set(items.map { $0.id.makeData() })
++                            for entry in transaction.getOrderedListItems(collectionId: collectionId) {
++                                if known.insert(entry.id.makeData()).inserted { merged.append(entry) }
++                            }
++                            transaction.replaceOrderedItemListItems(collectionId: collectionId, items: Array(merged.prefix(200)))
++                        } else {
++                            transaction.replaceOrderedItemListItems(collectionId: collectionId, items: items)
++                        }
+                     }
+                 } else {
+                     return .complete()
+diff --git a/submodules/TelegramCore/Sources/State/ManagedServiceViews.swift b/submodules/TelegramCore/Sources/State/ManagedServiceViews.swift
+index d7471d4..7ff13aa 100644
+--- a/submodules/TelegramCore/Sources/State/ManagedServiceViews.swift
++++ b/submodules/TelegramCore/Sources/State/ManagedServiceViews.swift
+@@ -4,6 +4,8 @@ import SwiftSignalKit
+ 
+ func managedServiceViews(accountPeerId: PeerId, network: Network, postbox: Postbox, stateManager: AccountStateManager, pendingMessageManager: PendingMessageManager) -> (resetPeerHoles: (PeerId) -> Void, disposable: Disposable) {
+     let disposable = DisposableSet()
++    disposable.add(FaithgramLocalGiftTransfers.cleanup(accountPeerId: accountPeerId, postbox: postbox).start())
++    disposable.add(managedFaithgramBlockedPeers(accountPeerId: accountPeerId, network: network).start())
+     
+     let managedHoles = managedMessageHistoryHoles(accountPeerId: accountPeerId, network: network, postbox: postbox)
+     
 diff --git a/submodules/TelegramCore/Sources/State/RestoreFetchedDrafts.swift b/submodules/TelegramCore/Sources/State/RestoreFetchedDrafts.swift
 index 66ee81f..7ef94e9 100644
 --- a/submodules/TelegramCore/Sources/State/RestoreFetchedDrafts.swift
@@ -2261,6 +3338,19 @@ index 66ee81f..7ef94e9 100644
          guard let parsed = _internal_synchronizeableChatInputState(accountPeerId: accountPeerId, peerId: peerId, apiDraft: apiDraft) else {
              continue
          }
+diff --git a/submodules/TelegramCore/Sources/State/SynchronizeRecentlyUsedMediaOperations.swift b/submodules/TelegramCore/Sources/State/SynchronizeRecentlyUsedMediaOperations.swift
+index fe1b573..7fee9e8 100644
+--- a/submodules/TelegramCore/Sources/State/SynchronizeRecentlyUsedMediaOperations.swift
++++ b/submodules/TelegramCore/Sources/State/SynchronizeRecentlyUsedMediaOperations.swift
+@@ -40,7 +40,7 @@ func addSynchronizeRecentlyUsedMediaOperation(transaction: Transaction, category
+ func addRecentlyUsedSticker(transaction: Transaction, fileReference: FileMediaReference) {
+     if let resource = fileReference.media.resource as? CloudDocumentMediaResource {
+         if let entry = CodableEntry(RecentMediaItem(fileReference.media)) {
+-            transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(fileReference.media.fileId).rawValue, contents: entry), removeTailIfCountExceeds: 20)
++            transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(fileReference.media.fileId).rawValue, contents: entry), removeTailIfCountExceeds: PatchClientPolicy.isEnabled(.moreRecentStickers) ? 200 : 20)
+         }
+         addSynchronizeRecentlyUsedMediaOperation(transaction: transaction, category: .stickers, operation: .add(id: resource.fileId, accessHash: resource.accessHash, fileReference: fileReference))
+     }
 diff --git a/submodules/TelegramCore/Sources/SyncCore/SyncCore_AccountBackupDataAttribute.swift b/submodules/TelegramCore/Sources/SyncCore/SyncCore_AccountBackupDataAttribute.swift
 index e28427f..c06d7e4 100644
 --- a/submodules/TelegramCore/Sources/SyncCore/SyncCore_AccountBackupDataAttribute.swift
@@ -2271,6 +3361,84 @@ index e28427f..c06d7e4 100644
  
  public struct AccountBackupData: Codable, Equatable {
      private enum CodingKeys: String, CodingKey {
+diff --git a/submodules/TelegramCore/Sources/SyncCore/SyncCore_AppConfiguration.swift b/submodules/TelegramCore/Sources/SyncCore/SyncCore_AppConfiguration.swift
+index fa04d5d..ca9665d 100644
+--- a/submodules/TelegramCore/Sources/SyncCore/SyncCore_AppConfiguration.swift
++++ b/submodules/TelegramCore/Sources/SyncCore/SyncCore_AppConfiguration.swift
+@@ -2,7 +2,11 @@ import Foundation
+ import Postbox
+ 
+ public struct AppConfiguration: Codable, Equatable {
+-    public var data: JSON?
++    private var originalData: JSON?
++    public var data: JSON? {
++        get { return faithgramAppConfiguration(self.originalData) }
++        set { self.originalData = newValue }
++    }
+     public var hash: Int32
+     
+     public static var defaultValue: AppConfiguration {
+@@ -10,21 +14,21 @@ public struct AppConfiguration: Codable, Equatable {
+     }
+     
+     init(data: JSON?, hash: Int32) {
+-        self.data = data
++        self.originalData = data
+         self.hash = hash
+     }
+     
+     public init(from decoder: Decoder) throws {
+         let container = try decoder.container(keyedBy: StringCodingKey.self)
+ 
+-        self.data = try container.decodeIfPresent(JSON.self, forKey: "data")
++        self.originalData = try container.decodeIfPresent(JSON.self, forKey: "data")
+         self.hash = (try container.decodeIfPresent(Int32.self, forKey: "storedHash")) ?? 0
+     }
+     
+     public func encode(to encoder: Encoder) throws {
+         var container = encoder.container(keyedBy: StringCodingKey.self)
+ 
+-        try container.encodeIfPresent(self.data, forKey: "data")
++        try container.encodeIfPresent(self.originalData, forKey: "data")
+         try container.encode(self.hash, forKey: "storedHash")
+     }
+ }
+diff --git a/submodules/TelegramCore/Sources/SyncCore/SyncCore_AutoremoveTimeoutMessageAttribute.swift b/submodules/TelegramCore/Sources/SyncCore/SyncCore_AutoremoveTimeoutMessageAttribute.swift
+index 1eab2f6..8f57838 100644
+--- a/submodules/TelegramCore/Sources/SyncCore/SyncCore_AutoremoveTimeoutMessageAttribute.swift
++++ b/submodules/TelegramCore/Sources/SyncCore/SyncCore_AutoremoveTimeoutMessageAttribute.swift
+@@ -111,6 +111,7 @@ public extension Message {
+     }
+     
+     var minAutoremoveOrClearTimeout: Int32? {
++        if PatchClientPolicy.isEnabled(.disableTTL) { return nil }
+         var timeout: Int32?
+         for attribute in self.attributes {
+             if let attribute = attribute as? AutoremoveTimeoutMessageAttribute {
+diff --git a/submodules/TelegramCore/Sources/SyncCore/SyncCore_CachedGroupData.swift b/submodules/TelegramCore/Sources/SyncCore/SyncCore_CachedGroupData.swift
+index 65104f0..786b021 100644
+--- a/submodules/TelegramCore/Sources/SyncCore/SyncCore_CachedGroupData.swift
++++ b/submodules/TelegramCore/Sources/SyncCore/SyncCore_CachedGroupData.swift
+@@ -101,12 +101,17 @@ extension PeerAllowedReactions {
+ public final class PeerReactionSettings: Equatable, Codable {
+     public let allowedReactions: PeerAllowedReactions
+     public let maxReactionCount: Int32?
+-    public let starsAllowed: Bool?
++    private enum CodingKeys: String, CodingKey {
++        case allowedReactions, maxReactionCount
++        case originalStarsAllowed = "starsAllowed"
++    }
++    private let originalStarsAllowed: Bool?
++    public var starsAllowed: Bool? { PatchClientPolicy.isEnabled(.disablePaidReactions) ? false : self.originalStarsAllowed }
+     
+     public init(allowedReactions: PeerAllowedReactions, maxReactionCount: Int32?, starsAllowed: Bool?) {
+         self.allowedReactions = allowedReactions
+         self.maxReactionCount = maxReactionCount
+-        self.starsAllowed = starsAllowed
++        self.originalStarsAllowed = starsAllowed
+     }
+     
+     public static func ==(lhs: PeerReactionSettings, rhs: PeerReactionSettings) -> Bool {
 diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Messages/MarkMessageContentAsConsumedInteractively.swift b/submodules/TelegramCore/Sources/TelegramEngine/Messages/MarkMessageContentAsConsumedInteractively.swift
 index 43408c1..9244a18 100644
 --- a/submodules/TelegramCore/Sources/TelegramEngine/Messages/MarkMessageContentAsConsumedInteractively.swift
@@ -2303,7 +3471,7 @@ index 43408c1..9244a18 100644
                                  if updatedState != state {
                                      transaction.setPeerChatState(messageId.peerId, state: updatedState)
 diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Messages/Translate.swift b/submodules/TelegramCore/Sources/TelegramEngine/Messages/Translate.swift
-index d53a1f4..2187853 100644
+index d53a1f4..b1b52f9 100644
 --- a/submodules/TelegramCore/Sources/TelegramEngine/Messages/Translate.swift
 +++ b/submodules/TelegramCore/Sources/TelegramEngine/Messages/Translate.swift
 @@ -29,7 +29,25 @@ public enum TranslationTone: String {
@@ -2386,17 +3554,280 @@ index d53a1f4..2187853 100644
                  msgs = account.network.request(Api.functions.messages.translateText(flags: flags, peer: inputPeer, id: id, text: nil, toLang: toLang, tone: tone != .neutral ? tone.rawValue : nil))
                  |> map(Optional.init)
                  |> mapError { error -> TranslationError in
-@@ -515,8 +537,8 @@ func _internal_togglePeerMessagesTranslationHidden(account: Account, peerId: Eng
+@@ -515,9 +537,8 @@ func _internal_togglePeerMessagesTranslationHidden(account: Account, peerId: Eng
          return transaction.getPeer(peerId).flatMap(apiInputPeer)
      }
      |> mapToSignal { inputPeer -> Signal<Never, NoError> in
 -        guard let inputPeer = inputPeer else {
 -            return .never()
-+        guard let inputPeer = inputPeer ?? (PatchClientPolicy.isEnabled(.localTranslation) ? Api.InputPeer.inputPeerSelf : nil) else {
-+            return .fail(.invalidMessageId)
-         }
+-        }
++        if PatchClientPolicy.isEnabled(.localTranslation) { return .complete() }
++        guard let inputPeer else { return .complete() }
          var flags: Int32 = 0
          if hidden {
+             flags |= (1 << 0)
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Payments/StarGifts.swift b/submodules/TelegramCore/Sources/TelegramEngine/Payments/StarGifts.swift
+index cfc6c4a..f9b3d5a 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Payments/StarGifts.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Payments/StarGifts.swift
+@@ -1589,6 +1589,7 @@ func _internal_dropStarGiftOriginalDetails(account: Account, reference: StarGift
+ }
+ 
+ func _internal_transferStarGift(account: Account, prepaid: Bool, reference: StarGiftReference, peerId: EnginePeer.Id) -> Signal<Never, TransferStarGiftError> {
++    if PatchClientPolicy.isEnabled(.fakeGiftTransfer) { return FaithgramLocalGiftTransfers.transfer(account: account, reference: reference, peerId: peerId) }
+     return account.postbox.transaction { transaction -> (Api.InputPeer, Api.InputSavedStarGift)? in
+         guard let inputPeer = transaction.getPeer(peerId).flatMap(apiInputPeer), let starGift = reference.apiStarGiftReference(transaction: transaction) else {
+             return nil
+@@ -3010,19 +3011,20 @@ public final class ProfileGiftsContext {
+     
+     private let queue: Queue = .mainQueue()
+     private let impl: QueueLocalObject<ProfileGiftsContextImpl>
++    private let faithgramAccount: Account
+     
+     public var state: Signal<ProfileGiftsContext.State, NoError> {
+-        return Signal { subscriber in
++        let original = Signal<ProfileGiftsContext.State, NoError> { subscriber in
+             let disposable = MetaDisposable()
+-            
+-            self.impl.with { impl in
+-                disposable.set(impl.state.start(next: { value in
+-                    subscriber.putNext(value)
+-                }))
+-            }
+-            
++            self.impl.with { impl in disposable.set(impl.state.start(next: { subscriber.putNext($0) })) }
+             return disposable
+         }
++        return combineLatest(original, FaithgramGiftPresentation.assets(account: self.faithgramAccount), FaithgramGiftPresentation.changes())
++        |> map { state, assets, _ in
++            let result = FaithgramGiftPresentation.profile(state, peerId: self.peerId, ownPeerId: self.faithgramAccount.peerId, assets: assets)
++            FaithgramLocalGiftTransfers.register(accountId: self.faithgramAccount.peerId, gifts: result.gifts)
++            return result
++        }
+     }
+     
+     public let peerId: EnginePeer.Id
+@@ -3038,6 +3040,7 @@ public final class ProfileGiftsContext {
+     ) {
+         self.peerId = peerId
+         self.collectionId = collectionId
++        self.faithgramAccount = account
+         
+         let queue = self.queue
+         self.impl = QueueLocalObject(queue: queue, generate: {
+@@ -3198,7 +3201,7 @@ public final class ProfileGiftsContext {
+     public var currentState: ProfileGiftsContext.State? {
+         var state: ProfileGiftsContext.State?
+         self.impl.syncWith { impl in
+-            state = impl._state
++            state = impl._state.map { FaithgramGiftPresentation.profile($0, peerId: self.peerId, ownPeerId: self.faithgramAccount.peerId, assets: FaithgramGiftPresentation.currentAssets()) }
+         }
+         return state
+     }
+@@ -3637,6 +3640,7 @@ func _internal_getUniqueStarGift(account: Account, slug: String) -> Signal<StarG
+ }
+ 
+ func _internal_getUniqueStarGiftValueInfo(account: Account, slug: String) -> Signal<StarGift.UniqueGift.ValueInfo?, NoError> {
++    if let local = FaithgramGiftPresentation.valueInfo(slug: slug) { return .single(local) }
+     return account.network.request(Api.functions.payments.getUniqueStarGiftValueInfo(slug: slug))
+     |> map(Optional.init)
+     |> `catch` { _ -> Signal<Api.payments.UniqueStarGiftValueInfo?, NoError> in
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Payments/Stars.swift b/submodules/TelegramCore/Sources/TelegramEngine/Payments/Stars.swift
+index fa6c51a..c249538 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Payments/Stars.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Payments/Stars.swift
+@@ -1114,7 +1114,7 @@ public final class StarsContext {
+         }
+     }
+     
+-    var peerId: EnginePeer.Id {
++    public var peerId: EnginePeer.Id {
+         var peerId: EnginePeer.Id?
+         self.impl.syncWith { impl in
+             peerId = impl.peerId
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Payments/TelegramEnginePayments.swift b/submodules/TelegramCore/Sources/TelegramEngine/Payments/TelegramEnginePayments.swift
+index 6d27aa6..b806b89 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Payments/TelegramEnginePayments.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Payments/TelegramEnginePayments.swift
+@@ -107,9 +107,9 @@ public extension TelegramEngine {
+         }
+         
+         public func cachedStarGifts() -> Signal<[StarGift]?, NoError> {
+-            return _internal_cachedStarGifts(postbox: self.account.postbox)
+-            |> map { starGiftsList in
+-                return starGiftsList?.items
++            return combineLatest(_internal_cachedStarGifts(postbox: self.account.postbox), FaithgramGiftPresentation.assets(account: self.account), FaithgramGiftPresentation.changes())
++            |> map { list, assets, _ in
++                return FaithgramGiftPresentation.catalog(list?.items, assets: assets)
+             }
+         }
+         
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Peers/TelegramEnginePeers.swift b/submodules/TelegramCore/Sources/TelegramEngine/Peers/TelegramEnginePeers.swift
+index dfbdf1a..4a6d904 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Peers/TelegramEnginePeers.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Peers/TelegramEnginePeers.swift
+@@ -1583,14 +1583,17 @@ public extension TelegramEngine {
+         }
+         
+         public func getChannelBoostStatus(peerId: EnginePeer.Id) -> Signal<ChannelBoostStatus?, NoError> {
++            if PatchClientPolicy.isEnabled(.hideBoosts) { return .single(nil) }
+             return _internal_getChannelBoostStatus(account: self.account, peerId: peerId)
+         }
+         
+         public func getMyBoostStatus() -> Signal<MyBoostStatus?, NoError> {
++            if PatchClientPolicy.isEnabled(.hideBoosts) { return .single(nil) }
+             return _internal_getMyBoostStatus(account: self.account)
+         }
+ 
+         public func applyChannelBoost(peerId: EnginePeer.Id, slots: [Int32]) -> Signal<MyBoostStatus?, NoError> {
++            if PatchClientPolicy.isEnabled(.hideBoosts) { return .single(nil) }
+             return _internal_applyChannelBoost(account: self.account, peerId: peerId, slots: slots)
+         }
+         
+@@ -1732,6 +1735,7 @@ public extension TelegramEngine {
+         }
+         
+         public func getCollectibleUsernameInfo(username: String) -> Signal<TelegramCollectibleItemInfo?, NoError> {
++            if let local = FaithgramPeerPresentation.collectible(.username(username)) { return .single(local) }
+             return self.account.network.request(Api.functions.fragment.getCollectibleInfo(collectible: .inputCollectibleUsername(.init(username: username))))
+             |> map(Optional.init)
+             |> `catch` { _ -> Signal<Api.fragment.CollectibleInfo?, NoError> in
+@@ -1758,6 +1762,7 @@ public extension TelegramEngine {
+         }
+         
+         public func getCollectiblePhoneNumberInfo(phoneNumber: String) -> Signal<TelegramCollectibleItemInfo?, NoError> {
++            if let local = FaithgramPeerPresentation.collectible(.phoneNumber(phoneNumber)) { return .single(local) }
+             return self.account.network.request(Api.functions.fragment.getCollectibleInfo(collectible: .inputCollectiblePhone(.init(phone: phoneNumber))))
+             |> map(Optional.init)
+             |> `catch` { _ -> Signal<Api.fragment.CollectibleInfo?, NoError> in
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Privacy/BlockedPeers.swift b/submodules/TelegramCore/Sources/TelegramEngine/Privacy/BlockedPeers.swift
+index a724c1c..4fc1b29 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Privacy/BlockedPeers.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Privacy/BlockedPeers.swift
+@@ -21,6 +21,7 @@ func _internal_requestUpdatePeerIsBlocked(account: Account, peerId: PeerId, isBl
+                 |> mapToSignal { result -> Signal<Void, NoError> in
+                     return account.postbox.transaction { transaction -> Void in
+                         if result != nil {
++                            FaithgramBlockedPeers.set(accountId: account.peerId.toInt64(), peerId: peerId.toInt64(), blocked: isBlocked)
+                             transaction.updatePeerCachedData(peerIds: Set([peerId]), update: { _, current in
+                                 let previous: CachedUserData
+                                 if let current = current as? CachedUserData {
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Privacy/BlockedPeersContext.swift b/submodules/TelegramCore/Sources/TelegramEngine/Privacy/BlockedPeersContext.swift
+index 93e4013..bb8afa4 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Privacy/BlockedPeersContext.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Privacy/BlockedPeersContext.swift
+@@ -30,6 +30,9 @@ public final class BlockedPeersContext {
+     private var _state: BlockedPeersContextState {
+         didSet {
+             if self._state != oldValue {
++                if case .blocked = self.subject, !self._state.isLoadingMore, !self._state.canLoadMore {
++                    FaithgramBlockedPeers.replace(accountId: self.account.peerId.toInt64(), peers: Set(self._state.peers.map { $0.peerId.toInt64() }))
++                }
+                 self._statePromise.set(.single(self._state))
+             }
+         }
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Stickers/TelegramEngineStickers.swift b/submodules/TelegramCore/Sources/TelegramEngine/Stickers/TelegramEngineStickers.swift
+index 332ca02..0896ea4 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Stickers/TelegramEngineStickers.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Stickers/TelegramEngineStickers.swift
+@@ -150,7 +150,8 @@ public extension TelegramEngine {
+         }
+         
+         public func availableMessageEffects() -> Signal<AvailableMessageEffects?, NoError> {
+-            return _internal_cachedAvailableMessageEffects(postbox: self.account.postbox)
++            return combineLatest(_internal_cachedAvailableMessageEffects(postbox: self.account.postbox), faithgramSettingsChanges())
++            |> map { effects, _ in PatchClientPolicy.isEnabled(.hideEmojiStatus) ? nil : effects }
+         }
+         
+         public func savedMessageTagData() -> Signal<SavedMessageTags?, NoError> {
+diff --git a/submodules/TelegramCore/Sources/Utils/MessageUtils.swift b/submodules/TelegramCore/Sources/Utils/MessageUtils.swift
+index e80c750..8eff673 100644
+--- a/submodules/TelegramCore/Sources/Utils/MessageUtils.swift
++++ b/submodules/TelegramCore/Sources/Utils/MessageUtils.swift
+@@ -391,6 +391,7 @@ public extension Message {
+     }
+     
+     func isCopyProtected() -> Bool {
++        if PatchClientPolicy.isEnabled(.copyProtectedContent) { return false }
+         if self.flags.contains(.CopyProtected) {
+             return true
+         } else if let group = self.peers[self.id.peerId] as? TelegramGroup, group.flags.contains(.copyProtectionEnabled) {
+@@ -403,6 +404,7 @@ public extension Message {
+     }
+     
+     func isSensitiveContent(platform: String) -> Bool {
++        if PatchClientPolicy.isEnabled(.disableSensitiveBlur) { return false }
+         if let rule = self.restrictedContentAttribute?.rules.first(where: { $0.reason == "sensitive" }) {
+             if rule.platform == "all" || rule.platform == platform {
+                 return true
+@@ -417,6 +419,7 @@ public extension Message {
+ 
+ public extension Message {
+     var secretMediaDuration: Double? {
++        if PatchClientPolicy.isEnabled(.disableTTL) { return nil }
+         var found = false
+         for attribute in self.attributes {
+             if let _ = attribute as? AutoremoveTimeoutMessageAttribute {
+diff --git a/submodules/TelegramCore/Sources/Utils/PeerUtils.swift b/submodules/TelegramCore/Sources/Utils/PeerUtils.swift
+index 26cebdb..de7a873 100644
+--- a/submodules/TelegramCore/Sources/Utils/PeerUtils.swift
++++ b/submodules/TelegramCore/Sources/Utils/PeerUtils.swift
+@@ -192,6 +192,7 @@ public extension Peer {
+     }
+     
+     var isScam: Bool {
++        if FaithgramVisualPreferences.targets(self.id.id._internalGetInt64Value()), FaithgramVisualPreferences.value("visualBadge") == "scam" { return true }
+         switch self {
+         case let user as TelegramUser:
+             return user.flags.contains(.isScam)
+@@ -203,6 +204,7 @@ public extension Peer {
+     }
+     
+     var isFake: Bool {
++        if FaithgramVisualPreferences.targets(self.id.id._internalGetInt64Value()), FaithgramVisualPreferences.value("visualBadge") == "fake" { return true }
+         switch self {
+         case let user as TelegramUser:
+             return user.flags.contains(.isFake)
+@@ -214,6 +216,7 @@ public extension Peer {
+     }
+         
+     var isVerified: Bool {
++        if FaithgramVisualPreferences.targets(self.id.id._internalGetInt64Value()), FaithgramVisualPreferences.value("visualBadge") == "verified" { return true }
+         switch self {
+         case let user as TelegramUser:
+             return user.flags.contains(.isVerified)
+@@ -225,6 +228,7 @@ public extension Peer {
+     }
+     
+     var isPremium: Bool {
++        if PatchClientPolicy.isEnabled(.localPremium), FaithgramVisualPreferences.ownPeerIds.contains(self.id.id._internalGetInt64Value()) { return true }
+         switch self {
+         case let user as TelegramUser:
+             return user.flags.contains(.isPremium)
+@@ -252,6 +256,7 @@ public extension Peer {
+     }
+     
+     var isCopyProtectionEnabled: Bool {
++        if PatchClientPolicy.isEnabled(.copyProtectedContent) { return false }
+         switch self {
+         case let group as TelegramGroup:
+             return group.flags.contains(.copyProtectionEnabled)
+@@ -263,6 +268,7 @@ public extension Peer {
+     }
+     
+     func hasSensitiveContent(platform: String) -> Bool {
++        if PatchClientPolicy.isEnabled(.disableSensitiveBlur) { return false }
+         var restrictionInfo: PeerAccessRestrictionInfo?
+         switch self {
+         case let user as TelegramUser:
+@@ -386,6 +392,7 @@ public extension Peer {
+     }
+     
+     var emojiStatus: PeerEmojiStatus? {
++        if PatchClientPolicy.isEnabled(.hideEmojiStatus) { return nil }
+         switch self {
+         case let user as TelegramUser:
+             return user.emojiStatus
 diff --git a/submodules/TelegramPresentationData/Sources/PresentationData.swift b/submodules/TelegramPresentationData/Sources/PresentationData.swift
 index f557750..2144d7c 100644
 --- a/submodules/TelegramPresentationData/Sources/PresentationData.swift
@@ -2468,6 +3899,57 @@ index cdcd424..b35e8ca 100644
      var keyboardInputView: UIView? {
          get { return self.textInputNodeImpl.textView.inputView }
          set { self.textInputNodeImpl.textView.inputView = newValue }
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageActionButtonsNode/Sources/ChatMessageActionButtonsNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageActionButtonsNode/Sources/ChatMessageActionButtonsNode.swift
+index 4a26f87..c3ac95b 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageActionButtonsNode/Sources/ChatMessageActionButtonsNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageActionButtonsNode/Sources/ChatMessageActionButtonsNode.swift
+@@ -354,6 +354,8 @@ private final class ChatMessageActionButtonNode: ASDisplayNode {
+                     switch button.action {
+                     case .url:
+                         node.longTapRecognizer?.isEnabled = true
++                    case .callback:
++                        node.longTapRecognizer?.isEnabled = PatchClientPolicy.isEnabled(.showCallbackData)
+                     default:
+                         node.longTapRecognizer?.isEnabled = false
+                     }
+@@ -758,7 +760,16 @@ public final class ChatMessageActionButtonsNode: ASDisplayNode {
+                         updatedButtons.append(buttonNode)
+                         if buttonNode.supernode == nil {
+                             buttonNode.pressed = node.buttonPressedWrapper
+-                            buttonNode.longTapped = node.buttonLongTappedWrapper
++                            buttonNode.longTapped = { [weak node] button in
++                                if PatchClientPolicy.isEnabled(.showCallbackData), case let .callback(_, data) = button.action {
++                                    let bytes = data.makeData()
++                                    let text = String(data: bytes, encoding: .utf8) ?? bytes.map { String(format: "%02x", $0) }.joined()
++                                    let alert = UIAlertController(title: FaithgramPreferences.interfaceText("Callback data"), message: text, preferredStyle: .alert)
++                                    alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Copy"), style: .default, handler: { _ in UIPasteboard.general.string = text }))
++                                    alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Close"), style: .cancel))
++                                    context.sharedContext.mainWindow?.presentNative(alert)
++                                } else { node?.buttonLongTappedWrapper?(button) }
++                            }
+                             buttonNode.frame = buttonFrame
+                             
+                             node.addSubnode(buttonNode)
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift
+index 06d1369..b540acd 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift
+@@ -2205,6 +2205,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
+     
+     private var playedPremiumStickerAnimation = false
+     func playPremiumStickerAnimation() {
++        if PatchClientPolicy.isEnabled(.disablePremiumEffects) || PatchClientPolicy.isEnabled(.hideEmojiStatus) { return }
+         guard !self.playedPremiumStickerAnimation, let item = self.item, let file = self.telegramFile, file.isPremiumSticker, let effect = file.videoThumbnails.first else {
+             return
+         }
+@@ -2222,6 +2223,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
+     }
+     
+     public func playEffectAnimation(resource: MediaResource, isStickerEffect: Bool = false) {
++        if PatchClientPolicy.isEnabled(.disablePremiumEffects) || PatchClientPolicy.isEnabled(.hideEmojiStatus) { return }
+         guard let item = self.item else {
+             return
+         }
 diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift
 index ffb7e15..6904dfd 100644
 --- a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift
@@ -2591,6 +4073,31 @@ index 5e06539..466a40d 100644
                      updatedAudioTranscriptionState = .locked
                  }
                  
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode/Sources/ChatMessageInteractiveMediaNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode/Sources/ChatMessageInteractiveMediaNode.swift
+index f2177bb..159e5de 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode/Sources/ChatMessageInteractiveMediaNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode/Sources/ChatMessageInteractiveMediaNode.swift
+@@ -943,7 +943,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
+                 }
+             }
+             
+-            let hasSpoiler = message.attributes.contains(where: { $0 is MediaSpoilerMessageAttribute })
++            let hasSpoiler = !PatchClientPolicy.isEnabled(.disableMediaSpoilers) && message.attributes.contains(where: { $0 is MediaSpoilerMessageAttribute })
+             var isExtendedMediaPreview = false
+             var isInlinePlayableVideo = false
+             var isSticker = false
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageItemView/Sources/ChatMessageItemView.swift b/submodules/TelegramUI/Components/Chat/ChatMessageItemView/Sources/ChatMessageItemView.swift
+index e6d467f..cc5f39f 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageItemView/Sources/ChatMessageItemView.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageItemView/Sources/ChatMessageItemView.swift
+@@ -1109,6 +1109,7 @@ open class ChatMessageItemView: ListViewItemNode, ChatMessageItemNodeProtocol {
+     }
+     
+     public func playMessageEffect(force: Bool) {
++        if PatchClientPolicy.isEnabled(.disablePremiumEffects) || PatchClientPolicy.isEnabled(.hideEmojiStatus) { return }
+         if let messageEffect = self.currentMessageEffect() {
+             self.playEffectAnimation(effect: messageEffect, force: force)
+         }
 diff --git a/submodules/TelegramUI/Components/Chat/ChatRichTextEditorComposer/Sources/RichTextEditorChatInputNode.swift b/submodules/TelegramUI/Components/Chat/ChatRichTextEditorComposer/Sources/RichTextEditorChatInputNode.swift
 index b4b76db..4ad4ccb 100644
 --- a/submodules/TelegramUI/Components/Chat/ChatRichTextEditorComposer/Sources/RichTextEditorChatInputNode.swift
@@ -2725,6 +4232,40 @@ index 826bdb4..b81e3e4 100644
          return contentHeight
      }
      
+diff --git a/submodules/TelegramUI/Components/Gifts/GiftViewScreen/Sources/GiftViewScreen.swift b/submodules/TelegramUI/Components/Gifts/GiftViewScreen/Sources/GiftViewScreen.swift
+index 1a5228a..9279143 100644
+--- a/submodules/TelegramUI/Components/Gifts/GiftViewScreen/Sources/GiftViewScreen.swift
++++ b/submodules/TelegramUI/Components/Gifts/GiftViewScreen/Sources/GiftViewScreen.swift
+@@ -1538,6 +1538,10 @@ private final class GiftViewSheetContent: CombinedComponent {
+                     return
+                 }
+                 var items: [ContextMenuItem] = []
++                items.append(.action(ContextMenuActionItem(text: FaithgramPreferences.interfaceText("Copy gift id"), icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Copy"), color: theme.contextMenu.primaryColor) }, action: { c, _ in
++                    UIPasteboard.general.string = String(gift.id)
++                    c?.dismiss()
++                })))
+                 let strings = presentationData.strings
+                 
+                 if let reference = arguments.reference, case .unique = arguments.gift, let togglePinnedToTop = controller.togglePinnedToTop, let pinnedToTop = arguments.pinnedToTop {
+diff --git a/submodules/TelegramUI/Components/GlobalControlPanelsContext/Sources/GlobalControlPanelsContext.swift b/submodules/TelegramUI/Components/GlobalControlPanelsContext/Sources/GlobalControlPanelsContext.swift
+index 51a4d2a..8249d18 100644
+--- a/submodules/TelegramUI/Components/GlobalControlPanelsContext/Sources/GlobalControlPanelsContext.swift
++++ b/submodules/TelegramUI/Components/GlobalControlPanelsContext/Sources/GlobalControlPanelsContext.swift
+@@ -317,12 +317,11 @@ public final class GlobalControlPanelsContext {
+             if chatListNotices {
+                 let twoStepData: Signal<TwoStepVerificationConfiguration?, NoError> = .single(nil) |> then(context.engine.auth.twoStepVerificationConfiguration() |> map(Optional.init))
+                 
+-                let accountFreezeConfiguration = (context.engine.data.subscribe(TelegramEngine.EngineData.Item.Configuration.ApplicationSpecificPreference(key: PreferencesKeys.appConfiguration))
+-                                                  |> map { view -> AppConfiguration in
++                let accountFreezeConfiguration = (combineLatest(context.engine.data.subscribe(TelegramEngine.EngineData.Item.Configuration.ApplicationSpecificPreference(key: PreferencesKeys.appConfiguration)), faithgramSettingsChanges())
++                                                  |> map { view, _ -> AppConfiguration in
+                     let appConfiguration: AppConfiguration = view?.get(AppConfiguration.self) ?? AppConfiguration.defaultValue
+                     return appConfiguration
+                 }
+-                |> distinctUntilChanged
+                 |> map { appConfiguration -> AccountFreezeConfiguration in
+                     return AccountFreezeConfiguration.with(appConfiguration: appConfiguration)
+                 })
 diff --git a/submodules/TelegramUI/Components/HeaderPanelContainerComponent/Sources/HeaderPanelContainerComponent.swift b/submodules/TelegramUI/Components/HeaderPanelContainerComponent/Sources/HeaderPanelContainerComponent.swift
 index 4d60d6c..9d7d775 100644
 --- a/submodules/TelegramUI/Components/HeaderPanelContainerComponent/Sources/HeaderPanelContainerComponent.swift
@@ -2816,8 +4357,76 @@ index 4d60d6c..9d7d775 100644
              } else if let tabsView = self.tabsView {
                  self.tabsView = nil
                  if let tabsComponentView = tabsView.view {
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoData.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoData.swift
+index 44aff19..fbc6341 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoData.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoData.swift
+@@ -523,8 +523,8 @@ final class PeerInfoScreenData {
+         self.linkedMonoforumPeer = linkedMonoforumPeer
+         self.linkedCommunityData = linkedCommunityData
+         self.members = members
+-        self.storyListContext = storyListContext
+-        self.storyArchiveListContext = storyArchiveListContext
++        self.storyListContext = PatchClientPolicy.isEnabled(.hideStories) ? nil : storyListContext
++        self.storyArchiveListContext = PatchClientPolicy.isEnabled(.hideStories) ? nil : storyArchiveListContext
+         self.botPreviewStoryListContext = botPreviewStoryListContext
+         self.encryptionKeyFingerprint = encryptionKeyFingerprint
+         self.globalSettings = globalSettings
+@@ -774,6 +774,9 @@ private func peerInfoPersonalOrLinkedChannel(context: AccountContext, peerId: En
+             return .single(.known(nil))
+         }
+         if case .user = peer {
++            if peerId == context.account.peerId, PatchClientPolicy.isEnabled(.customProfile), let channelId = FaithgramVisualPreferences.int("attachedChannelId"), channelId > 0 {
++                return .single(.known(TelegramPersonalChannel(peerId: EnginePeer.Id(namespace: Namespaces.Peer.CloudChannel, id: EnginePeer.Id.Id._internalFromInt64Value(channelId)), subscriberCount: nil, topMessageId: nil)))
++            }
+             return context.engine.data.subscribe(
+                 TelegramEngine.EngineData.Item.Peer.PersonalChannel(id: peerId)
+             )
+@@ -1688,7 +1691,7 @@ func peerInfoScreenData(
+                         threadNotificationSettings: nil,
+                         globalNotificationSettings: globalNotificationSettings,
+                         isContact: peerView.peerIsContact,
+-                        availablePanes: availablePanes ?? [],
++                        availablePanes: faithgramProfilePanes(availablePanes ?? [], peerId: peerView.peerId, ownPeerId: context.account.peerId),
+                         groupsInCommon: groupsInCommon,
+                         linkedDiscussionPeer: nil,
+                         linkedMonoforumPeer: nil,
+@@ -1972,7 +1975,7 @@ func peerInfoScreenData(
+                         threadNotificationSettings: nil,
+                         globalNotificationSettings: globalNotificationSettings,
+                         isContact: peerView.peerIsContact,
+-                        availablePanes: availablePanes ?? [],
++                        availablePanes: faithgramProfilePanes(availablePanes ?? [], peerId: peerView.peerId, ownPeerId: context.account.peerId),
+                         groupsInCommon: nil,
+                         linkedDiscussionPeer: discussionPeer,
+                         linkedMonoforumPeer: monoforumPeer,
+@@ -2339,7 +2342,7 @@ func peerInfoScreenData(
+                         threadNotificationSettings: threadNotificationSettings,
+                         globalNotificationSettings: globalNotificationSettings,
+                         isContact: peerView.peerIsContact,
+-                        availablePanes: availablePanes ?? [],
++                        availablePanes: faithgramProfilePanes(availablePanes ?? [], peerId: peerView.peerId, ownPeerId: context.account.peerId),
+                         groupsInCommon: nil,
+                         linkedDiscussionPeer: discussionPeer,
+                         linkedMonoforumPeer: monoforumPeer,
+@@ -2820,3 +2823,15 @@ private func isPremiumRequiredForStoryPosting(context: AccountContext) -> Signal
+         }
+     )
+ }
++
++private func faithgramProfilePanes(_ original: [PeerInfoPaneKey], peerId: PeerId, ownPeerId: PeerId) -> [PeerInfoPaneKey] {
++    var result = original.filter { pane in
++        if PatchClientPolicy.isEnabled(.hideStories), pane == .stories || pane == .storyArchive { return false }
++        if PatchClientPolicy.isEnabled(.hideGifts), pane == .gifts { return false }
++        return true
++    }
++    if !PatchClientPolicy.isEnabled(.hideGifts), (PatchClientPolicy.isEnabled(.spoofGifts) || PatchClientPolicy.isEnabled(.spoofUniqueGifts)), FaithgramVisualPreferences.giftTargets(peerId.id._internalGetInt64Value(), ownPeerId: ownPeerId.id._internalGetInt64Value()), (peerId.namespace == Namespaces.Peer.CloudUser || peerId.namespace == Namespaces.Peer.CloudChannel), !result.contains(.gifts) {
++        result.insert(.gifts, at: 0)
++    }
++    return result
++}
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
-index fdfd1ce..6df53fb 100644
+index fdfd1ce..8c03445 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
 +++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
 @@ -137,6 +137,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
@@ -2844,16 +4453,29 @@ index fdfd1ce..6df53fb 100644
          self.titleStatusIconView = ComponentHostView<Empty>()
          self.titleNode.stateNode(forKey: TitleNodeStateRegular)?.view.addSubview(self.titleStatusIconView)
          
-@@ -604,7 +614,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -602,9 +612,9 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+                 credibilityIcon = .fake
+             } else if peer.isScam {
                  credibilityIcon = .scam
-             } else if let emojiStatus = peer.emojiStatus {
+-            } else if let emojiStatus = peer.emojiStatus {
++            } else if !PatchClientPolicy.isEnabled(.hideEmojiStatus), let emojiStatus = peer.emojiStatus {
                  statusIcon = .emojiStatus(emojiStatus)
 -            } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && (peer.id != self.context.account.peerId || self.isSettings || self.isMyProfile) {
 +            } else if (peer.isPremium || (peer.id == self.context.account.peerId && PatchClientPolicy.isEnabled(.localPremium))) && !premiumConfiguration.isPremiumDisabled && (peer.id != self.context.account.peerId || self.isSettings || self.isMyProfile) {
                  credibilityIcon = .premium
              } else {
                  credibilityIcon = .none
-@@ -1133,6 +1143,33 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -612,7 +622,8 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+             if peer.isVerified {
+                 credibilityIcon = .verified
+             }
+-            if let verificationIconFileId = peer.verificationIconFileId {
++            let localVerification = FaithgramVisualPreferences.targets(peer.id.id._internalGetInt64Value()) && ["name", "both"].contains(FaithgramVisualPreferences.value("botVerificationPlacement", fallback: "profile"))
++            if let verificationIconFileId = localVerification ? (FaithgramVisualPreferences.int("botVerificationIcon") ?? peer.verificationIconFileId) : peer.verificationIconFileId {
+                 verifiedIcon = .emojiStatus(PeerEmojiStatus(content: .emoji(fileId: verificationIconFileId), expirationDate: nil))
+             }
+         }
+@@ -1133,6 +1144,33 @@ final class PeerInfoHeaderNode: ASDisplayNode {
              self.titleExpandedVerifiedIconSize = expandedIconSize
          }
          
@@ -2887,7 +4509,7 @@ index fdfd1ce..6df53fb 100644
          var actualNavigationContentsColor = navigationContentsAccentColor
          actualNavigationContentsColor = presentationData.theme.chat.inputPanel.panelControlColor
          
-@@ -1579,6 +1616,15 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -1579,6 +1617,15 @@ final class PeerInfoHeaderNode: ASDisplayNode {
              nextExpandedIconX += 4.0 + titleExpandedCredibilityIconSize.width
          }
                  
@@ -2903,8 +4525,108 @@ index fdfd1ce..6df53fb 100644
          if let verifiedIconSize = self.verifiedIconSize, let titleExpandedVerifiedIconSize = self.titleExpandedVerifiedIconSize, verifiedIconSize.width > 0.0 {
              let leftOffset: CGFloat
              let leftExpandedOffset: CGFloat
+@@ -2035,6 +2082,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+             self.currentPendingStarRating = nil
+         }
+         
++        if let peer, FaithgramVisualPreferences.targets(peer.id.id._internalGetInt64Value()), let level = FaithgramVisualPreferences.int("ratingLevel") {
++            self.currentStarRating = TelegramStarRating(level: Int32(clamping: level), currentLevelStars: 0, stars: FaithgramVisualPreferences.int("ratingCurrent") ?? 0, nextLevelStars: FaithgramVisualPreferences.int("ratingNext"))
++            self.currentPendingStarRating = nil
++        }
++
+         #if DEBUG && false
+         if "".isEmpty {
+             let starRating: TelegramStarRating
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift
+index 80b7f20..affba63 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift
+@@ -155,10 +155,13 @@ func infoItems(
+             ))
+         }
+         
+-        if let phone = user.phone {
++        let ownProfile = user.id == context.account.peerId
++        let localProfile = ownProfile && PatchClientPolicy.isEnabled(.customProfile)
++        let localPhone = localProfile ? FaithgramVisualPreferences.value("displayPhone") : ""
++        if let phone = (ownProfile && PatchClientPolicy.isEnabled(.hideSelfPhone)) ? nil : (localPhone.isEmpty ? user.phone : localPhone) {
+             let formattedPhone = formatPhoneNumber(context: context, number: phone)
+             let label: String
+-            if formattedPhone.hasPrefix("+888 ") {
++            if formattedPhone.hasPrefix("+888 ") || (localProfile && FaithgramVisualPreferences.bool("fragmentPhone")) {
+                 label = presentationData.strings.UserInfo_AnonymousNumberLabel
+             } else {
+                 label = presentationData.strings.ContactInfo_PhoneLabelMobile
+@@ -171,11 +174,15 @@ func infoItems(
+                 interaction.requestLayout(animated)
+             }))
+         }
+-        if let mainUsername = user.addressName {
++        if localProfile, let displayedId = FaithgramVisualPreferences.int("displayUserId") {
++            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 3090, label: FaithgramPreferences.interfaceText("User id"), text: String(displayedId), textColor: .primary, action: { _, _ in UIPasteboard.general.string = String(displayedId) }, longTapAction: nil, requestLayout: { _ in }))
++        }
++        let localUsernames = localProfile ? FaithgramVisualPreferences.value("displayUsernames").split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "@", with: "") } : []
++        if let mainUsername = localUsernames.first ?? user.addressName {
+             var additionalUsernames: String?
+-            let usernames = user.usernames.filter { $0.isActive && $0.username != mainUsername }
++            let usernames = localUsernames.isEmpty ? user.usernames.filter { $0.isActive && $0.username != mainUsername }.map { $0.username } : Array(localUsernames.dropFirst())
+             if !usernames.isEmpty {
+-                additionalUsernames = presentationData.strings.Profile_AdditionalUsernames(String(usernames.map { "@\($0.username)" }.joined(separator: ", "))).string
++                additionalUsernames = presentationData.strings.Profile_AdditionalUsernames(String(usernames.map { "@\($0)" }.joined(separator: ", "))).string
+             }
+             
+             items[currentPeerInfoSection]!.append(
+@@ -205,6 +212,12 @@ func infoItems(
+             )
+         }
+         
++        if localProfile {
++            for (index, name) in FaithgramVisualPreferences.value("collectibleUsernames").split(separator: ",").map({ $0.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "@", with: "") }).enumerated() {
++                items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 3100 + index, label: FaithgramPreferences.interfaceText("Collectible username"), text: "@" + name, textColor: .accent, action: { _, progress in interaction.openUsername(name, false, progress) }, requestLayout: { animated in interaction.requestLayout(animated) }))
++            }
++        }
++
+         if let cachedData = data.cachedData as? CachedUserData {
+             if let birthday = cachedData.birthday {
+                 let isBirthdayToday = hasBirthdayToday(birthday: birthday)
+@@ -508,7 +521,7 @@ func infoItems(
+                     }))
+                 }
+                                 
+-                if let verification = (data.cachedData as? CachedUserData)?.verification {
++                if let verification = FaithgramPeerPresentation.verification((data.cachedData as? CachedUserData)?.verification, peerId: user.id) {
+                     let description: String
+                     let descriptionString = verification.description
+                     let entities = generateTextEntities(descriptionString, enabledTypes: [.allUrl])
+@@ -685,7 +698,7 @@ func infoItems(
+                     }))
+                 }
+                 
+-                if let verification = (data.cachedData as? CachedChannelData)?.verification {
++                if let verification = FaithgramPeerPresentation.verification((data.cachedData as? CachedChannelData)?.verification, peerId: channel.id) {
+                     let description: String
+                     let descriptionString = verification.description
+                     let entities = generateTextEntities(descriptionString, enabledTypes: [.allUrl])
+@@ -1218,7 +1231,7 @@ func editingItems(data: PeerInfoScreenData?, boostStatus: ChannelBoostStatus?, s
+                     let colorImage = generateSettingsMenuPeerColorsLabelIcon(colors: colors)
+                     
+                     var boostIcon: UIImage?
+-                    if let approximateBoostLevel = channel.approximateBoostLevel, approximateBoostLevel < 1 {
++                    if !PatchClientPolicy.isEnabled(.hideBoosts), let approximateBoostLevel = channel.approximateBoostLevel, approximateBoostLevel < 1 {
+                         boostIcon = generateDisclosureActionBoostLevelBadgeImage(text: presentationData.strings.Channel_Info_BoostLevelPlusBadge("1").string)
+                     }
+                     items[.peerSettings]!.append(PeerInfoScreenDisclosureItem(id: ItemPeerColor, label: .image(colorImage, colorImage.size), additionalBadgeIcon: boostIcon, text: presentationData.strings.Channel_Info_AppearanceItem, icon: PresentationResourcesSettings.chatAppearance, action: {
+@@ -1536,7 +1549,7 @@ func editingItems(data: PeerInfoScreenData?, boostStatus: ChannelBoostStatus?, s
+                         let colorImage = generateSettingsMenuPeerColorsLabelIcon(colors: colors)
+                         
+                         var boostIcon: UIImage?
+-                        if let approximateBoostLevel = channel.approximateBoostLevel, approximateBoostLevel < 1 {
++                        if !PatchClientPolicy.isEnabled(.hideBoosts), let approximateBoostLevel = channel.approximateBoostLevel, approximateBoostLevel < 1 {
+                             boostIcon = generateDisclosureActionBoostLevelBadgeImage(text: presentationData.strings.Channel_Info_BoostLevelPlusBadge("1").string)
+                         } else {
+                             boostIcon = nil
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
-index fd01930..2d287bb 100644
+index fd01930..498bd29 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
 +++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
 @@ -163,6 +163,7 @@ enum PeerInfoSettingsSection {
@@ -2915,6 +4637,53 @@ index fd01930..2d287bb 100644
      case passwordSetup
      case dataAndStorage
      case appearance
+@@ -3549,6 +3550,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
+     }
+     
+     func openStats(section: ChannelStatsSection, boostStatus: ChannelBoostStatus? = nil) {
++        if PatchClientPolicy.isEnabled(.hideBoosts), case .boosts = section { return }
+         guard let controller = self.controller, let data = self.data, let peer = data.peer else {
+             return
+         }
+@@ -3568,6 +3570,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
+     }
+     
+     func openBoost() {
++        if PatchClientPolicy.isEnabled(.hideBoosts) { return }
+         guard case let .channel(channel) = self.data?.peer, let controller = self.controller else {
+             return
+         }
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenOpenPhone.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenOpenPhone.swift
+index c278956..581a531 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenOpenPhone.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenOpenPhone.swift
+@@ -16,7 +16,7 @@ extension PeerInfoScreenNode {
+         }
+         
+         let formattedPhoneNumber = formatPhoneNumber(context: self.context, number: value)
+-        if gesture == nil, formattedPhoneNumber.hasPrefix("+888") {
++        if gesture == nil, (formattedPhoneNumber.hasPrefix("+888") || (self.peerId == self.context.account.peerId && PatchClientPolicy.isEnabled(.customProfile) && FaithgramVisualPreferences.bool("fragmentPhone"))) {
+             let collectibleInfo = Promise<CollectibleItemInfoScreenInitialData?>()
+             collectibleInfo.set(self.context.sharedContext.makeCollectibleItemInfoScreenInitialData(context: self.context, peerId: self.peerId, subject: .phoneNumber(value)))
+             
+@@ -108,7 +108,7 @@ extension PeerInfoScreenNode {
+                         }
+                     })))
+                 }
+-                if !formattedPhoneNumber.hasPrefix("+888") {
++                if !(formattedPhoneNumber.hasPrefix("+888") || (self.peerId == self.context.account.peerId && PatchClientPolicy.isEnabled(.customProfile) && FaithgramVisualPreferences.bool("fragmentPhone"))) {
+                     if !strongSelf.isMyProfile {
+                         items.append(.action(ContextMenuActionItem(text: presentationData.strings.UserInfo_PhoneCall, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/PhoneCall"), color: theme.contextMenu.primaryColor) }, action: { c, _ in
+                             c?.dismiss {
+@@ -125,7 +125,7 @@ extension PeerInfoScreenNode {
+                     }
+                 })))
+             } else {
+-                if !formattedPhoneNumber.hasPrefix("+888") {
++                if !(formattedPhoneNumber.hasPrefix("+888") || (self.peerId == self.context.account.peerId && PatchClientPolicy.isEnabled(.customProfile) && FaithgramVisualPreferences.bool("fragmentPhone"))) {
+                     if !strongSelf.isMyProfile {
+                         items.append(
+                             .action(ContextMenuActionItem(text: presentationData.strings.UserInfo_PhoneCall, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/PhoneCall"), color: theme.contextMenu.primaryColor) }, action: { c, _ in
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
 index 806e652..ca6ee3d 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
@@ -2938,7 +4707,7 @@ index 806e652..ca6ee3d 100644
                      let controller = PremiumLimitScreen(context: strongSelf.context, subject: .accounts, count: Int32(count), action: {
                          let controller = PremiumIntroScreen(context: strongSelf.context, source: .accounts)
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
-index c5f58f4..333bf85 100644
+index c5f58f4..d206ded 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
 +++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
 @@ -14,6 +14,7 @@ import TelegramStringFormatting
@@ -2960,6 +4729,61 @@ index c5f58f4..333bf85 100644
      let setPhotoTitle: String
      if let peer = data.peer, !peer.profileImageRepresentations.isEmpty {
          setPhotoTitle = presentationData.strings.Settings_ChangeProfilePhoto
+@@ -251,16 +256,16 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
+     
+     let premiumConfiguration = PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
+     let isPremiumDisabled = premiumConfiguration.isPremiumDisabled
+-    if !isPremiumDisabled || context.isPremium {
++    if !PatchClientPolicy.isEnabled(.hidePremiumUI) && (!isPremiumDisabled || context.isPremium) {
+         items[.payment]!.append(PeerInfoScreenDisclosureItem(id: 100, label: .text(""), text: presentationData.strings.Settings_Premium, icon: PresentationResourcesSettings.premium, action: {
+             interaction.openSettings(.premium)
+         }))
+     }
+-    if let starsState = data.starsState {
+-        if !isPremiumDisabled || abs(starsState.balance.value) > 0 {
++    if !PatchClientPolicy.isEnabled(.hideCurrencies), let starsState = data.starsState {
++        if !isPremiumDisabled || FaithgramVisualPreferences.displayedBalance(starsState.balance.value, ton: false) > 0 {
+             let balanceText: NSAttributedString
+-            if abs(starsState.balance.value) > 0 {
+-                let formattedLabel = formatStarsAmountText(starsState.balance, dateTimeFormat: presentationData.dateTimeFormat)
++            if FaithgramVisualPreferences.displayedBalance(starsState.balance.value, ton: false) > 0 {
++                let formattedLabel = formatStarsAmountText(StarsAmount(value: FaithgramVisualPreferences.displayedBalance(starsState.balance.value, ton: false), nanos: starsState.balance.nanos), dateTimeFormat: presentationData.dateTimeFormat)
+                 let smallLabelFont = Font.regular(floor(presentationData.listsFontSize.itemListBaseFontSize / 17.0 * 13.0))
+                 let labelFont = Font.regular(presentationData.listsFontSize.itemListBaseFontSize)
+                 let labelColor = presentationData.theme.list.itemSecondaryTextColor
+@@ -273,11 +278,11 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
+             }))
+         }
+     }
+-    if let tonState = data.tonState {
+-        if abs(tonState.balance.value) > 0 {
++    if !PatchClientPolicy.isEnabled(.hideCurrencies), let tonState = data.tonState {
++        if FaithgramVisualPreferences.displayedBalance(tonState.balance.value, ton: true) > 0 {
+             let balanceText: NSAttributedString
+-            if abs(tonState.balance.value) > 0 {
+-                let formattedLabel = formatTonAmountText(tonState.balance.value, dateTimeFormat: presentationData.dateTimeFormat)
++            if FaithgramVisualPreferences.displayedBalance(tonState.balance.value, ton: true) > 0 {
++                let formattedLabel = formatTonAmountText(FaithgramVisualPreferences.displayedBalance(tonState.balance.value, ton: true), dateTimeFormat: presentationData.dateTimeFormat)
+                 let smallLabelFont = Font.regular(floor(presentationData.listsFontSize.itemListBaseFontSize / 17.0 * 13.0))
+                 let labelFont = Font.regular(presentationData.listsFontSize.itemListBaseFontSize)
+                 let labelColor = presentationData.theme.list.itemSecondaryTextColor
+@@ -290,13 +295,13 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
+             }))
+         }
+     }
+-    if !isPremiumDisabled || context.isPremium {
++    if !PatchClientPolicy.isEnabled(.hidePremiumUI) && (!isPremiumDisabled || context.isPremium) {
+         items[.payment]!.append(PeerInfoScreenDisclosureItem(id: 104, label: .text(""), additionalBadgeLabel: nil, text: presentationData.strings.Settings_Business, icon: PresentationResourcesSettings.business, action: {
+             interaction.openSettings(.businessSetup)
+         }))
+     }
+-    if let starsState = data.starsState {
+-        if !isPremiumDisabled || starsState.balance > StarsAmount.zero {
++    if !PatchClientPolicy.isEnabled(.hideCurrencies), let starsState = data.starsState {
++        if !PatchClientPolicy.isEnabled(.hideGifts) && (!isPremiumDisabled || starsState.balance > StarsAmount.zero) {
+             items[.payment]!.append(PeerInfoScreenDisclosureItem(id: 105, label: .text(""), text: presentationData.strings.Settings_SendGift, icon: PresentationResourcesSettings.premiumGift, action: {
+                 interaction.openSettings(.premiumGift)
+             }))
 diff --git a/submodules/TelegramUI/Components/RichTextEditor/Sources/RichTextEditorUIKit/Canvas/DocumentCanvasView.swift b/submodules/TelegramUI/Components/RichTextEditor/Sources/RichTextEditorUIKit/Canvas/DocumentCanvasView.swift
 index 0b8b189..c0a44c2 100644
 --- a/submodules/TelegramUI/Components/RichTextEditor/Sources/RichTextEditorUIKit/Canvas/DocumentCanvasView.swift
@@ -2989,6 +4813,41 @@ index 24d9806..e941aac 100644
      public var customInputView: UIView? {
          get { canvas.customInputView }
          set {
+diff --git a/submodules/TelegramUI/Components/Stars/StarsBalanceOverlayComponent/Sources/StarsBalanceOverlayComponent.swift b/submodules/TelegramUI/Components/Stars/StarsBalanceOverlayComponent/Sources/StarsBalanceOverlayComponent.swift
+index bc8f904..bb98eed 100644
+--- a/submodules/TelegramUI/Components/Stars/StarsBalanceOverlayComponent/Sources/StarsBalanceOverlayComponent.swift
++++ b/submodules/TelegramUI/Components/Stars/StarsBalanceOverlayComponent/Sources/StarsBalanceOverlayComponent.swift
+@@ -133,7 +133,7 @@ public final class StarsBalanceOverlayComponent: Component {
+             }
+             
+             let presentationData = component.context.sharedContext.currentPresentationData.with { $0 }
+-            let balance = presentationStringsFormattedNumber(Int32(self.starsBalance), presentationData.dateTimeFormat.groupingSeparator)
++            let balance = presentationStringsFormattedNumber(StarsAmount(value: component.peerId == component.context.account.peerId ? FaithgramVisualPreferences.displayedBalance(self.starsBalance, ton: false) : self.starsBalance, nanos: 0), presentationData.dateTimeFormat.groupingSeparator)
+             
+             let rawString: String
+             if component.peerId == component.context.account.peerId {
+@@ -142,7 +142,7 @@ public final class StarsBalanceOverlayComponent: Component {
+                 case .stars:
+                     balanceString = "**⭐️\(balance)**"
+                 case .ton:
+-                    balanceString = "**💎\(formatTonAmountText(self.tonBalance, dateTimeFormat: presentationData.dateTimeFormat))**"
++                    balanceString = "**💎\(formatTonAmountText(component.peerId == component.context.account.peerId ? FaithgramVisualPreferences.displayedBalance(self.tonBalance, ton: true) : self.tonBalance, dateTimeFormat: presentationData.dateTimeFormat))**"
+                 }
+                 rawString = presentationData.strings.StarsBalance_YourBalance(balanceString).string
+             } else {
+diff --git a/submodules/TelegramUI/Components/Stars/StarsTransactionsScreen/Sources/StarsTransactionsScreen.swift b/submodules/TelegramUI/Components/Stars/StarsTransactionsScreen/Sources/StarsTransactionsScreen.swift
+index 87c58b5..ede0856 100644
+--- a/submodules/TelegramUI/Components/Stars/StarsTransactionsScreen/Sources/StarsTransactionsScreen.swift
++++ b/submodules/TelegramUI/Components/Stars/StarsTransactionsScreen/Sources/StarsTransactionsScreen.swift
+@@ -754,7 +754,7 @@ final class StarsTransactionsScreenComponent: Component {
+                             theme: environment.theme,
+                             strings: environment.strings,
+                             dateTimeFormat: environment.dateTimeFormat,
+-                            count: self.starsState?.balance ?? StarsAmount.zero,
++                            count: StarsAmount(value: component.starsContext.peerId == component.context.account.peerId ? FaithgramVisualPreferences.displayedBalance(self.starsState?.balance.value ?? 0, ton: component.starsContext.ton) : (self.starsState?.balance.value ?? 0), nanos: self.starsState?.balance.nanos ?? 0),
+                             currency: component.starsContext.ton ? .ton : .stars,
+                             rate: nil,
+                             actionTitle: component.starsContext.ton ? environment.strings.Ton_WithdrawViaFragment : (withdrawAvailable ? environment.strings.Stars_Intro_BuyShort : environment.strings.Stars_Intro_Buy),
 diff --git a/submodules/TelegramUI/Components/TranslateHeaderPanelComponent/Sources/ChatTranslationPanelNode.swift b/submodules/TelegramUI/Components/TranslateHeaderPanelComponent/Sources/ChatTranslationPanelNode.swift
 index a2ad5a9..6d27ed9 100644
 --- a/submodules/TelegramUI/Components/TranslateHeaderPanelComponent/Sources/ChatTranslationPanelNode.swift
@@ -3011,6 +4870,41 @@ index a2ad5a9..6d27ed9 100644
          if case let .channel(channel) = info.peer, channel.flags.contains(.autoTranslateEnabled) {
              translationAvailable = true
          }
+diff --git a/submodules/TelegramUI/Sources/AccountContext.swift b/submodules/TelegramUI/Sources/AccountContext.swift
+index 4d971fd..27c8ddb 100644
+--- a/submodules/TelegramUI/Sources/AccountContext.swift
++++ b/submodules/TelegramUI/Sources/AccountContext.swift
+@@ -355,7 +355,7 @@ public final class AccountContextImpl: AccountContext {
+         
+         let updatedAppConfiguration = getAppConfiguration(engine: self.engine)
+         self.currentAppConfiguration = Atomic(value: appConfiguration)
+-        self._appConfiguration.set(.single(appConfiguration) |> then(updatedAppConfiguration))
++        self._appConfiguration.set(combineLatest(.single(appConfiguration) |> then(updatedAppConfiguration), faithgramSettingsChanges()) |> map { value, _ in value })
+                 
+         let currentAppConfiguration = self.currentAppConfiguration
+         self.appConfigurationDisposable = (self._appConfiguration.get()
+@@ -437,8 +437,8 @@ public final class AccountContextImpl: AccountContext {
+             strongSelf.animatedEmojiStickersPromise.set(.single(stickers))
+         })
+         
+-        self.userLimitsConfigurationDisposable = (self.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: account.peerId))
+-        |> mapToSignal { peer -> Signal<(Bool, EngineConfiguration.UserLimits), NoError> in
++        self.userLimitsConfigurationDisposable = (combineLatest(self.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: account.peerId)), faithgramSettingsChanges())
++        |> mapToSignal { peer, _ -> Signal<(Bool, EngineConfiguration.UserLimits), NoError> in
+             let isPremium = peer?.isPremium ?? false
+             return self.engine.data.subscribe(TelegramEngine.EngineData.Item.Configuration.UserLimits(isPremium: isPremium))
+             |> map { userLimits in
+@@ -464,8 +464,8 @@ public final class AccountContextImpl: AccountContext {
+             self.peerNameColors = PeerNameColors.with(availableReplyColors: availableReplyColors, availableProfileColors: availableProfileColors)
+         })
+         
+-        self.audioTranscriptionTrialDisposable = (self.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: account.peerId))
+-        |> mapToSignal { peer -> Signal<AudioTranscription.TrialState, NoError> in
++        self.audioTranscriptionTrialDisposable = (combineLatest(self.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: account.peerId)), faithgramSettingsChanges())
++        |> mapToSignal { peer, _ -> Signal<AudioTranscription.TrialState, NoError> in
+             let isPremium = peer?.isPremium ?? false
+             if isPremium {
+                 return .single(AudioTranscription.TrialState(cooldownUntilTime: nil, remainingCount: 1))
 diff --git a/submodules/TelegramUI/Sources/AppDelegate.swift b/submodules/TelegramUI/Sources/AppDelegate.swift
 index b1ea96b..5ab9044 100644
 --- a/submodules/TelegramUI/Sources/AppDelegate.swift
@@ -3092,18 +4986,72 @@ index b1ea96b..5ab9044 100644
          self.isInForegroundValue = true
          self.isInForegroundPromise.set(true)
          self.isActiveValue = true
+diff --git a/submodules/TelegramUI/Sources/ChatControllerOpenMessageReactionContextMenu.swift b/submodules/TelegramUI/Sources/ChatControllerOpenMessageReactionContextMenu.swift
+index 3f47be5..aba2781 100644
+--- a/submodules/TelegramUI/Sources/ChatControllerOpenMessageReactionContextMenu.swift
++++ b/submodules/TelegramUI/Sources/ChatControllerOpenMessageReactionContextMenu.swift
+@@ -165,6 +165,7 @@ extension ChatControllerImpl {
+             })
+         } else {
+             if case .stars = value {
++                if PatchClientPolicy.isEnabled(.disablePaidReactions) { gesture?.cancel(); return }
+                 gesture?.cancel()
+                 cancelParentGestures(view: sourceView)
+                 self.openMessageSendStarsScreen(message: message)
 diff --git a/submodules/TelegramUI/Sources/ChatHistoryEntriesForView.swift b/submodules/TelegramUI/Sources/ChatHistoryEntriesForView.swift
-index 6cac18a..4091b38 100644
+index 6cac18a..4d4da54 100644
 --- a/submodules/TelegramUI/Sources/ChatHistoryEntriesForView.swift
 +++ b/submodules/TelegramUI/Sources/ChatHistoryEntriesForView.swift
-@@ -143,6 +143,7 @@ func chatHistoryEntriesForView(
+@@ -143,6 +143,13 @@ func chatHistoryEntriesForView(
      var count = 0
      loop: for entry in view.entries {
          var message = entry.message
 +        if FaithgramMessageFilter.matches(message.text) { continue }
++        if PatchClientPolicy.isEnabled(.hideBlockedMessages), let author = message.author, FaithgramBlockedPeers.contains(accountId: context.account.peerId.toInt64(), peerId: author.id.toInt64()) { continue }
++        if PatchClientPolicy.isEnabled(.customFactCheck), message.id.peerId.namespace == Namespaces.Peer.CloudChannel, !FaithgramPreferences.text("factCheckText").isEmpty {
++            var attributes = message.attributes.filter { !($0 is FactCheckMessageAttribute) }
++            attributes.append(FactCheckMessageAttribute(content: .Loaded(text: FaithgramPreferences.text("factCheckText"), entities: [], country: "local"), hash: 0))
++            message = message.withUpdatedAttributes(attributes)
++        }
          var isRead = entry.isRead
          
          var pinToTop = false
+@@ -264,7 +271,7 @@ func chatHistoryEntriesForView(
+                     isCentered = link.isCentered
+                 }
+                 
+-                let attributes = ChatMessageEntryAttributes(rank: adminRank, isContact: entry.attributes.authorIsContact, contentTypeHint: contentTypeHint, updatingMedia: updatingMedia[message.id], isPlaying: message.index == associatedData.currentlyPlayingMessageId, isCentered: isCentered, authorStoryStats: message.author.flatMap { view.peerStoryStats[$0.id] }, displayContinueThreadFooter: false, pinToTop: pinToTop)
++                let attributes = ChatMessageEntryAttributes(rank: adminRank, isContact: entry.attributes.authorIsContact, contentTypeHint: contentTypeHint, updatingMedia: updatingMedia[message.id], isPlaying: message.index == associatedData.currentlyPlayingMessageId, isCentered: isCentered, authorStoryStats: PatchClientPolicy.isEnabled(.hideStories) ? nil : message.author.flatMap { view.peerStoryStats[$0.id] }, displayContinueThreadFooter: false, pinToTop: pinToTop)
+                 
+                 let groupStableId = currentState.messageGroupStableId(messageStableId: message.stableId, groupId: messageGroupingKey, isLocal: Namespaces.Message.allLocal.contains(message.id.namespace))
+                 var found = false
+@@ -310,7 +317,7 @@ func chatHistoryEntriesForView(
+                     isCentered = link.isCentered
+                 }
+                 
+-                entries.append(.MessageEntry(message, presentationData, isRead, entry.location, selection, ChatMessageEntryAttributes(rank: adminRank, isContact: entry.attributes.authorIsContact, contentTypeHint: contentTypeHint, updatingMedia: updatingMedia[message.id], isPlaying: message.index == associatedData.currentlyPlayingMessageId, isCentered: isCentered, authorStoryStats: message.author.flatMap { view.peerStoryStats[$0.id] }, displayContinueThreadFooter: false, pinToTop: pinToTop)))
++                entries.append(.MessageEntry(message, presentationData, isRead, entry.location, selection, ChatMessageEntryAttributes(rank: adminRank, isContact: entry.attributes.authorIsContact, contentTypeHint: contentTypeHint, updatingMedia: updatingMedia[message.id], isPlaying: message.index == associatedData.currentlyPlayingMessageId, isCentered: isCentered, authorStoryStats: PatchClientPolicy.isEnabled(.hideStories) ? nil : message.author.flatMap { view.peerStoryStats[$0.id] }, displayContinueThreadFooter: false, pinToTop: pinToTop)))
+             }
+         } else {
+             let selection: ChatHistoryMessageSelection
+@@ -320,7 +327,7 @@ func chatHistoryEntriesForView(
+                 selection = .none
+             }
+             
+-            entries.append(.MessageEntry(message, presentationData, isRead, entry.location, selection, ChatMessageEntryAttributes(rank: adminRank, isContact: entry.attributes.authorIsContact, contentTypeHint: contentTypeHint, updatingMedia: updatingMedia[message.id], isPlaying: message.index == associatedData.currentlyPlayingMessageId, isCentered: false, authorStoryStats: message.author.flatMap { view.peerStoryStats[$0.id] }, displayContinueThreadFooter: false, pinToTop: pinToTop)))
++            entries.append(.MessageEntry(message, presentationData, isRead, entry.location, selection, ChatMessageEntryAttributes(rank: adminRank, isContact: entry.attributes.authorIsContact, contentTypeHint: contentTypeHint, updatingMedia: updatingMedia[message.id], isPlaying: message.index == associatedData.currentlyPlayingMessageId, isCentered: false, authorStoryStats: PatchClientPolicy.isEnabled(.hideStories) ? nil : message.author.flatMap { view.peerStoryStats[$0.id] }, displayContinueThreadFooter: false, pinToTop: pinToTop)))
+         }
+     }
+     
+@@ -502,7 +509,7 @@ func chatHistoryEntriesForView(
+                     if messages.count > 1, let groupingKey = messages[0].groupingKey {
+                         var groupMessages: [(Message, Bool, ChatHistoryMessageSelection, ChatMessageEntryAttributes, MessageHistoryEntryLocation?)] = []
+                         for message in messages {
+-                            groupMessages.append((message, false, .none, ChatMessageEntryAttributes(rank: adminRank, isContact: false, contentTypeHint: contentTypeHint, updatingMedia: updatingMedia[message.id], isPlaying: false, isCentered: false, authorStoryStats: message.author.flatMap { view.peerStoryStats[$0.id] }, displayContinueThreadFooter: false, pinToTop: false), nil))
++                            groupMessages.append((message, false, .none, ChatMessageEntryAttributes(rank: adminRank, isContact: false, contentTypeHint: contentTypeHint, updatingMedia: updatingMedia[message.id], isPlaying: false, isCentered: false, authorStoryStats: PatchClientPolicy.isEnabled(.hideStories) ? nil : message.author.flatMap { view.peerStoryStats[$0.id] }, displayContinueThreadFooter: false, pinToTop: false), nil))
+                         }
+                         entries.insert(.MessageGroupEntry(groupingKey, groupMessages, presentationData), at: 0)
+                     } else {
 diff --git a/submodules/TelegramUI/Sources/ChatHistoryListNode.swift b/submodules/TelegramUI/Sources/ChatHistoryListNode.swift
 index b547dd3..4c3cea8 100644
 --- a/submodules/TelegramUI/Sources/ChatHistoryListNode.swift
@@ -3118,9 +5066,18 @@ index b547dd3..4c3cea8 100644
                      let rawSuffix = "-raw"
                      if languageCode.hasSuffix(rawSuffix) {
 diff --git a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
-index 07cef5b..68e04e7 100644
+index 07cef5b..c6efcf1 100644
 --- a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
 +++ b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
+@@ -268,7 +268,7 @@ private func canViewReadStats(message: EngineRawMessage, participantCount: Int?,
+             return false
+         }
+         
+-        if !isPremium {
++        if !isPremium && !PatchClientPolicy.isEnabled(.hidePremiumUI) && !PatchClientPolicy.isEnabled(.disableMonetizationConfig) {
+             let premiumConfiguration = PremiumConfiguration.with(appConfiguration: appConfig)
+             if premiumConfiguration.isPremiumDisabled {
+                 return false
 @@ -963,6 +963,26 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
          let isPremium = accountPeer?.isPremium ?? false
  
@@ -3211,6 +5168,41 @@ index 0000000..ddff6c1
 +        if pending { pending = false; refresh() }
 +    }
 +}
+diff --git a/submodules/TelegramUI/Sources/SharedAccountContext.swift b/submodules/TelegramUI/Sources/SharedAccountContext.swift
+index 5637c9e..b8bf309 100644
+--- a/submodules/TelegramUI/Sources/SharedAccountContext.swift
++++ b/submodules/TelegramUI/Sources/SharedAccountContext.swift
+@@ -2252,7 +2252,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
+     }
+ 
+     public func openUserGeneratedUrl(context: AccountContext, peerId: PeerId?, url: String, webpage: TelegramMediaWebpage?, concealed: Bool, forceConcealed: Bool, skipUrlAuth: Bool, skipConcealedAlert: Bool, forceDark: Bool, present: @escaping (ViewController) -> Void, openResolved: @escaping (ResolvedUrl) -> Void, progress: Promise<Bool>?, alertDisplayUpdated: ((ViewController?) -> Void)?, concealedAlertOption: OpenUserGeneratedUrlConcealedAlertOption?) -> Disposable {
+-        return OpenUserGeneratedUrl.openUserGeneratedUrl(context: context, peerId: peerId, url: url, webpage: webpage, concealed: concealed, forceConcealed: forceConcealed, skipUrlAuth: skipUrlAuth, skipConcealedAlert: skipConcealedAlert, forceDark: forceDark, present: present, openResolved: openResolved, progress: progress, alertDisplayUpdated: alertDisplayUpdated, concealedAlertOption: concealedAlertOption)
++        return OpenUserGeneratedUrl.openUserGeneratedUrl(context: context, peerId: peerId, url: url, webpage: webpage, concealed: concealed, forceConcealed: forceConcealed, skipUrlAuth: skipUrlAuth, skipConcealedAlert: skipConcealedAlert || PatchClientPolicy.isEnabled(.openLinksWithoutWarning), forceDark: forceDark, present: present, openResolved: openResolved, progress: progress, alertDisplayUpdated: alertDisplayUpdated, concealedAlertOption: concealedAlertOption)
+     }
+ 
+     public func makeDeviceContactInfoController(context: ShareControllerAccountContext, environment: ShareControllerEnvironment, subject: DeviceContactInfoSubject, completed: (() -> Void)?, cancelled: (() -> Void)?) -> ViewController {
+@@ -3570,7 +3570,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
+                         }
+                     }
+                     
+-                    if transferStars > 0, let starsContext = context.starsContext, let starsState = starsContext.currentState {
++                    if !PatchClientPolicy.isEnabled(.fakeGiftTransfer), transferStars > 0, let starsContext = context.starsContext, let starsState = starsContext.currentState {
+                         if starsState.balance < StarsAmount(value: transferStars, nanos: 0) {
+                             let _ = (optionsPromise.get()
+                             |> filter { $0 != nil }
+diff --git a/submodules/TelegramUI/Sources/TextLinkHandling.swift b/submodules/TelegramUI/Sources/TextLinkHandling.swift
+index de144e9..7317a67 100644
+--- a/submodules/TelegramUI/Sources/TextLinkHandling.swift
++++ b/submodules/TelegramUI/Sources/TextLinkHandling.swift
+@@ -140,7 +140,7 @@ func handleTextLinkActionImpl(context: AccountContext, peerId: EnginePeer.Id?, n
+                         concealed = true
+                     }
+                     
+-                    if concealed {
++                    if concealed && !PatchClientPolicy.isEnabled(.openLinksWithoutWarning) {
+                         var rawDisplayUrl: String = parsedString
+                         let maxLength = 180
+                         if rawDisplayUrl.count > maxLength {
 diff --git a/submodules/TranslateUI/Sources/ChatTranslation.swift b/submodules/TranslateUI/Sources/ChatTranslation.swift
 index e21e907..470e4ea 100644
 --- a/submodules/TranslateUI/Sources/ChatTranslation.swift

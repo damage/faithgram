@@ -16,13 +16,13 @@ if __name__ == "__main__":
         directory.mkdir(parents=True, exist_ok=True)
     for api_source in (source / "submodules" / "TelegramApi" / "Sources").glob("*.swift"):
         shutil.copy2(api_source, api_target / api_source.name)
-    for name in ["PatchClientPolicy", "PatchClientStorage", "FaithgramPreferences", "FaithgramVault", "FaithgramHistoryStore", "FaithgramSessionBackup", "FaithgramMessageFilter", "FaithgramMediaArchive"]:
+    for name in ["PatchClientPolicy", "PatchClientStorage", "FaithgramPreferences", "FaithgramVault", "FaithgramHistoryStore", "FaithgramSessionBackup", "FaithgramMessageFilter", "FaithgramMediaArchive", "FaithgramVisualPreferences", "FaithgramProtocolLog"]:
         shutil.copy2(source / f"submodules/TelegramCore/Sources/PatchClient/{name}.swift", policy_target / f"{name}.swift")
     shutil.copy2(source / "submodules/TelegramCore/Sources/SyncCore/SyncCore_AccountBackupDataAttribute.swift", policy_target / "AccountBackupData.swift")
     for test_source in (PROJECT / "tests").glob("*Tests.swift"):
         shutil.copy2(test_source, tests_target / test_source.name)
     shutil.copy2(PROJECT / "tests/Package.swift", package / "Package.swift")
-    subprocess.run(["swift", "test", "--jobs", "2"], cwd=package, check=True)
+    subprocess.run(["swift", "test", "--jobs", "2", "-Xswiftc", "-Xfrontend", "-Xswiftc", "-warn-long-function-bodies=500", "-Xswiftc", "-Xfrontend", "-Xswiftc", "-warn-long-expression-type-checking=200"], cwd=package, check=True, timeout=900)
 
     from interface_tests import run as run_interface_tests
     run_interface_tests(source, PROJECT / "work" / "interface-tests")

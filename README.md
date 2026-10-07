@@ -22,6 +22,16 @@ Faithgram settings sit above My Profile and open a categorized settings screen. 
 
 Options are off by default. History starts after it is enabled and this device receives an edit or deletion; it cannot recover messages never received. Downloaded archive files are limited to 256 MB each. Secret chats and disappearing media are excluded from the archive. Local translation and transcription do not fall back to Telegram or an external translation service while the corresponding device-only option is enabled.
 
+## Local display tools
+
+Profile controls include custom phone and user id labels, regular and collectible usernames, collectible purchase details, an attached channel, selected-peer verification and bot verification, rating levels, and a local frozen-account state. Stars and nanoTON overrides change displayed balances. The original server identity, authorization, ownership and payment amounts stay intact.
+
+Gift controls can change regular gift details or display them as unique gifts, including the model, symbol, backdrop, rarity, supply, owner, host, resale and valuation fields. Target them at your profile, all profiles, or everyone except you. Extra catalog entries use matching Telegram gift and custom emoji ids. The catalog-id viewer and unique-gift copy action help identify existing assets. Fake transfer creates a local service-message preview without opening a payment form or issuing a transfer request; the preview is removed on the next process launch.
+
+Message tools include custom fact-check text for channel messages, copying protected content, local expiry control, long-press callback-data inspection, sensitive-content and spoiler controls, 200 recent stickers, direct link opening and blocked-author filters. Monetization switches cover premium purchase UI, gifts, paid reactions, emoji statuses and effects, currencies, boosts and app configuration. Server permissions still apply to read statistics and premium actions.
+
+The optional decoded API log records client requests, responses and errors in an encrypted local rolling store. It is off by default. Badge grants are stored on this installation; the bundled owner badge is assigned to peer id 1000.
+
 ## Status
 
 The new feature set is awaiting compilation and device testing. The previous [build 5](https://github.com/damage/faithgram/actions/runs/37505486298) passed eight Swift tests and the full Xcode 26.2 build. The owner confirmed installation with Sideloadly and app launch on iOS 26.6.1. That result covers the previous build only.
