@@ -57,8 +57,6 @@ private enum FaithgramRow {
     case toggle(PatchClientOption)
     case ghost
     case text(title: String, key: String, fallback: String)
-    case badge(peerId: Int64, role: FaithgramPreferences.Badge)
-    case addBadge
     case action(FaithgramAction)
 }
 
@@ -77,6 +75,7 @@ private enum FaithgramAction: String {
     case groupMedia = "Save media from groups"
     case channelMedia = "Save media from channels"
     case notifications = "Sounds and notification settings"
+    case activityStatus = "Live Activity status"
 }
 
 private final class FaithgramToggle: UISwitch {
@@ -178,7 +177,7 @@ private final class FaithgramSettingsController: ViewController, UITableViewData
                 self.rows += [.action(.lockNow), .action(.passcode)]
             }
             if category == .accounts { self.rows += [.action(.exportSessions), .action(.restoreSessions)] }
-            if category == .appearance { self.rows += [.action(.theme), .action(.stickers)] }
+            if category == .appearance { self.rows += [.action(.activityStatus), .action(.theme), .action(.stickers)] }
             if category == .notifications { self.rows.append(.action(.notifications)) }
             if category == .messages {
                 self.rows += [.text(title: "Deleted mark", key: "deletedMark", fallback: "🧹"),
@@ -189,14 +188,12 @@ private final class FaithgramSettingsController: ViewController, UITableViewData
                 self.rows.append(.text(title: "Translation language", key: "translationTarget", fallback: Locale.current.identifier.components(separatedBy: CharacterSet(charactersIn: "_-" )).first ?? "en"))
                 self.rows += [.action(.privateMedia), .action(.groupMedia), .action(.channelMedia), .action(.downloads)]
             }
-            if category == .badges {
-                self.rows = FaithgramPreferences.badgeGrants.sorted { (Int64($0.key) ?? 0) < (Int64($1.key) ?? 0) }.compactMap { key, value in
-                    guard let id = Int64(key) else { return nil }
-                    return .badge(peerId: id, role: value)
-                }
-                if self.context.account.peerId.id._internalGetInt64Value() == FaithgramPreferences.badgeOwnerId { self.rows.append(.addBadge) }
-            }
-        } else { self.rows = FaithgramCategory.allCases.map(FaithgramRow.category) }
+            if category == .badges { self.rows = [] }
+        } else {
+            self.rows = FaithgramCategory.allCases.filter {
+                $0 != .badges || FaithgramPreferences.canManageBadges(accountPeerId: self.context.account.peerId.id._internalGetInt64Value())
+            }.map(FaithgramRow.category)
+        }
         if self.isNodeLoaded { self.table.reloadData() }
     }
     func numberOfSections(in tableView: UITableView) -> Int { return 1 }
@@ -208,6 +205,7 @@ private final class FaithgramSettingsController: ViewController, UITableViewData
         cell.textLabel?.textColor = .white
         cell.textLabel?.font = .preferredFont(forTextStyle: .body)
         cell.textLabel?.adjustsFontForContentSizeCategory = true
+        cell.textLabel?.numberOfLines = 0
         cell.detailTextLabel?.textColor = .gray
         cell.detailTextLabel?.font = .preferredFont(forTextStyle: .footnote)
         cell.detailTextLabel?.numberOfLines = 0
@@ -215,7 +213,12 @@ private final class FaithgramSettingsController: ViewController, UITableViewData
         switch self.rows[indexPath.row] {
         case let .category(category):
             cell.textLabel?.text = FaithgramPreferences.interfaceText(category.title)
-            cell.imageView?.image = UIImage(systemName: category.symbol)
+            if let symbol = UIImage(systemName: category.symbol) {
+                cell.imageView?.image = UIGraphicsImageRenderer(size: CGSize(width: 28, height: 28)).image { _ in
+                    let size = symbol.size.aspectFitted(CGSize(width: 24, height: 24))
+                    symbol.withTintColor(.white, renderingMode: .alwaysOriginal).draw(in: CGRect(x: (28 - size.width) / 2, y: (28 - size.height) / 2, width: size.width, height: size.height))
+                }
+            }
             cell.accessoryType = .disclosureIndicator
         case let .visualField(field):
             cell.textLabel?.text = FaithgramPreferences.interfaceText(field.title)
@@ -248,17 +251,11 @@ private final class FaithgramSettingsController: ViewController, UITableViewData
             let value = FaithgramPreferences.text(key, fallback: fallback)
             cell.detailTextLabel?.text = value.isEmpty ? FaithgramPreferences.interfaceText("Not set") : value
             cell.accessoryType = .disclosureIndicator
-        case let .badge(peerId, role):
-            cell.textLabel?.text = "\(peerId)"
-            cell.detailTextLabel?.text = "faithgram · \(role.title)"
-            cell.imageView?.image = UIImage(systemName: role == .betaTester ? "testtube.2" : "checkmark.seal")
         case let .action(action):
             cell.textLabel?.text = FaithgramPreferences.interfaceText(action.rawValue)
             cell.accessoryType = .disclosureIndicator
             if action == .exportSessions || action == .restoreSessions { cell.detailTextLabel?.text = FaithgramPreferences.interfaceText("Password-protected backup of active sessions") }
-        case .addBadge:
-            cell.textLabel?.text = FaithgramPreferences.interfaceText("Assign badge")
-            cell.imageView?.image = UIImage(systemName: "plus.circle")
+            if action == .activityStatus { cell.detailTextLabel?.text = FaithgramPreferences.text("activityStatus", fallback: "Check permissions and signing") }
         }
         return cell
     }
@@ -266,7 +263,12 @@ private final class FaithgramSettingsController: ViewController, UITableViewData
         tableView.deselectRow(at: indexPath, animated: true)
         switch self.rows[indexPath.row] {
         case let .category(category):
-            (self.navigationController as? NavigationController)?.pushViewController(FaithgramSettingsController(context: self.context, category: category))
+            if category == .badges {
+                guard FaithgramPreferences.canManageBadges(accountPeerId: context.account.peerId.id._internalGetInt64Value()) else { return }
+                self.openSettingsPage(FaithgramBadgeAdminController(context: self.context))
+            } else {
+                self.openSettingsPage(FaithgramSettingsController(context: self.context, category: category))
+            }
         case let .visualField(field):
             if field.choices.isEmpty {
                 self.openSettingsPage(FaithgramTextController(context: context, title: FaithgramPreferences.interfaceText(field.title), text: FaithgramVisualPreferences.value(field.key, fallback: field.fallback), save: { text in try FaithgramVisualPreferences.save(field, text: text) }))
@@ -296,9 +298,6 @@ private final class FaithgramSettingsController: ViewController, UITableViewData
             alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
             alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Save"), style: .default, handler: { _ in FaithgramPreferences.setText(key, alert.textFields?.first?.text ?? "") }))
             self.context.sharedContext.mainWindow?.presentNative(alert)
-        case .addBadge: self.editBadge(peerId: nil)
-        case let .badge(peerId, _):
-            if self.context.account.peerId.id._internalGetInt64Value() == FaithgramPreferences.badgeOwnerId { self.editBadge(peerId: peerId) }
         default: break
         }
     }
@@ -345,21 +344,22 @@ private final class FaithgramSettingsController: ViewController, UITableViewData
         case .groupMedia: openSettingsPage(saveIncomingMediaController(context: context, scope: .peerType(.groups)))
         case .channelMedia: openSettingsPage(saveIncomingMediaController(context: context, scope: .peerType(.channels)))
         case .notifications: openSettingsPage(notificationsAndSoundsController(context: context, exceptionsList: nil))
-        }
-    }
-    private func editBadge(peerId: Int64?) {
-        let alert = UIAlertController(title: "faithgram badge", message: FaithgramPreferences.interfaceText("Enter a user peer id. Badges are stored on this installation."), preferredStyle: .alert)
-        alert.addTextField { field in field.keyboardType = .numberPad; field.text = peerId.map(String.init) }
-        for role in FaithgramPreferences.Badge.allCases {
-            alert.addAction(UIAlertAction(title: role.title, style: .default, handler: { _ in
-                guard let value = alert.textFields?.first?.text, let id = Int64(value), id > 0 else { return }
-                FaithgramPreferences.setBadge(role, peerId: id)
+        case .activityStatus:
+            let status = FaithgramPreferences.text("activityStatus", fallback: "Live Activities require iOS 16.2 or later.")
+            let error = FaithgramPreferences.text("activityError")
+            let alert = UIAlertController(title: "faithgram live activity", message: status + (error.isEmpty ? "" : "\n\n" + error), preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "start or restart", style: .default, handler: { _ in
+                PatchClientPolicy.setEnabled(.dynamicIsland, true)
+                NotificationCenter.default.post(name: FaithgramPreferences.restartLiveActivity, object: nil)
             }))
+            alert.addAction(UIAlertAction(title: "iOS settings", style: .default, handler: { _ in
+                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+            }))
+            alert.addAction(UIAlertAction(title: "close", style: .cancel))
+            context.sharedContext.mainWindow?.presentNative(alert)
         }
-        if let peerId = peerId { alert.addAction(UIAlertAction(title: "remove badge", style: .destructive, handler: { _ in FaithgramPreferences.setBadge(nil, peerId: peerId) })) }
-        alert.addAction(UIAlertAction(title: "cancel", style: .cancel))
-        self.context.sharedContext.mainWindow?.presentNative(alert)
     }
+
 }
 
 public func patchClientSettingsController(context: AccountContext) -> ViewController {

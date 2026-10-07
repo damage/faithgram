@@ -97,6 +97,9 @@ def build(source: Path, build_number: int):
             raise RuntimeError("The artifact does not contain the expected iPhone app binary.")
         if any(name.endswith("embedded.mobileprovision") for name in names):
             raise RuntimeError("Unexpected provisioning profile in the unsigned artifact.")
+        extensions = [name for name in names if name.endswith(".appex/Info.plist")]
+        if extensions != ["Payload/Telegram.app/PlugIns/FaithgramActivityExtension.appex/Info.plist"]:
+            raise RuntimeError("The unsigned artifact must include the Faithgram Live Activity extension.")
     destination = artifacts / "Faithgram-unsigned.ipa"
     ipa.replace(destination)
     print(f"Created {destination}. Sign this IPA locally before installing it.")

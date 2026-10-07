@@ -1,5 +1,5 @@
 diff --git a/Telegram/BUILD b/Telegram/BUILD
-index 9ad13cf..9c2f028 100644
+index 9ad13cf..4e7a166 100644
 --- a/Telegram/BUILD
 +++ b/Telegram/BUILD
 @@ -309,6 +309,11 @@ filegroup(
@@ -79,7 +79,7 @@ index 9ad13cf..9c2f028 100644
      <key>NSSpeechRecognitionUsageDescription</key>
      <string>We need this to transcribe audio messages on your request.</string>
      <key>NSUserActivityTypes</key>
-@@ -1777,12 +1819,13 @@ ios_application(
+@@ -1777,12 +1819,14 @@ ios_application(
          ":RequiredDeviceCapabilitiesPlist",
          ":UrlTypesInfoPlist",
      ],
@@ -91,10 +91,11 @@ index 9ad13cf..9c2f028 100644
      resources = [
          ":LaunchScreen",
 +        "Resources/FaithgramIcon.png",
++        "Resources/FaithgramBadgeService.json",
          #":DefaultAppIcon",
      ],
      frameworks = [
-@@ -1796,13 +1839,14 @@ ios_application(
+@@ -1796,13 +1840,14 @@ ios_application(
          ":AppStringResources",
      ],
      extensions = select({
@@ -517,6 +518,76 @@ index 243b622..031e894 100644
      if !locales.contains(Locale.current.identifier) {
          locales.append(Locale.current.identifier)
      }
+diff --git a/submodules/RMIntro/Sources/platform/ios/RMIntroViewController.m b/submodules/RMIntro/Sources/platform/ios/RMIntroViewController.m
+index 2b2977e..d7e5505 100644
+--- a/submodules/RMIntro/Sources/platform/ios/RMIntroViewController.m
++++ b/submodules/RMIntro/Sources/platform/ios/RMIntroViewController.m
+@@ -104,6 +104,7 @@ typedef enum {
+     SVariable *_alternativeLocalization;
+     NSDictionary<NSString *, NSString *> *_englishStrings;
+     
++    UIImageView *_faithgramIconView;
+     UIView *_wrapperView;
+     UIView *_startButton;
+     
+@@ -160,7 +161,7 @@ typedef enum {
+         }
+         _englishStrings = englishStrings;
+         
+-        _headlines = @[ _englishStrings[@"Tour.Title1"], _englishStrings[@"Tour.Title2"],  _englishStrings[@"Tour.Title6"], _englishStrings[@"Tour.Title3"], _englishStrings[@"Tour.Title4"], _englishStrings[@"Tour.Title5"]];
++        _headlines = @[ @"faithgram", _englishStrings[@"Tour.Title2"],  _englishStrings[@"Tour.Title6"], _englishStrings[@"Tour.Title3"], _englishStrings[@"Tour.Title4"], _englishStrings[@"Tour.Title5"]];
+         _descriptions = @[_englishStrings[@"Tour.Text1"], _englishStrings[@"Tour.Text2"],  _englishStrings[@"Tour.Text6"], _englishStrings[@"Tour.Text3"], _englishStrings[@"Tour.Text4"], _englishStrings[@"Tour.Text5"]];
+         
+         __weak RMIntroViewController *weakSelf = self;
+@@ -303,6 +304,8 @@ typedef enum {
+         
+         [self setupGL];
+         [self.view addSubview:_glkView];
++        _glkView.hidden = _currentPage == 0;
++        if (_faithgramIconView != nil) [self.view bringSubviewToFront:_faithgramIconView];
+         
+         [self startTimer];
+         _isOpenGLLoaded = true;
+@@ -350,6 +353,12 @@ typedef enum {
+     self.view.backgroundColor = _backgroundColor;
+     
+     [self loadGL];
++    NSString *iconPath = [[NSBundle mainBundle] pathForResource:@"FaithgramIcon" ofType:@"png"];
++    _faithgramIconView = [[UIImageView alloc] initWithImage:[UIImage imageWithContentsOfFile:iconPath]];
++    _faithgramIconView.contentMode = UIViewContentModeScaleAspectFit;
++    _faithgramIconView.userInteractionEnabled = false;
++    _faithgramIconView.accessibilityLabel = @"faithgram";
++    _glkView.hidden = YES;
+     
+     _wrapperView = [[UIScrollView alloc]initWithFrame:self.view.bounds];
+     [self.view addSubview:_wrapperView];
+@@ -377,6 +386,7 @@ typedef enum {
+         [_pageScrollView addSubview:p];
+     }
+     [_pageScrollView setPage:0];
++    [self.view addSubview:_faithgramIconView];
+     
+     [self.view addSubview:_alternativeLanguageButton];
+     
+@@ -551,6 +561,9 @@ typedef enum {
+     
+     _pageControl.frame = CGRectMake(0, pageControlY, self.view.bounds.size.width, 7);
+     _glkView.frame = CGRectChangedOriginY(_glkView.frame, glViewY - statusBarHeight);
++    _faithgramIconView.frame = CGRectInset(_glkView.frame, 20, 20);
++    _faithgramIconView.hidden = _currentPage != 0;
++    _glkView.hidden = _currentPage == 0;
+     
+     CGFloat startButtonWidth = MIN(430.0 - 48.0, self.view.bounds.size.width - 48.0f);
+     UIView *startButton = self.createStartButton(startButtonWidth);
+@@ -711,6 +724,8 @@ NSInteger _current_page_end;
+     }
+     
+     [_pageControl setCurrentPage:_currentPage];
++    _faithgramIconView.hidden = _currentPage != 0;
++    _glkView.hidden = _currentPage == 0;
+ }
+ 
+ - (void)alternativeLanguageButtonPressed {
 diff --git a/submodules/SettingsUI/BUILD b/submodules/SettingsUI/BUILD
 index b8a0540..312b7d2 100644
 --- a/submodules/SettingsUI/BUILD
@@ -529,6 +600,277 @@ index b8a0540..312b7d2 100644
          "//submodules/MtProtoKit:MtProtoKit",
          "//submodules/TelegramPresentationData:TelegramPresentationData",
          "//submodules/AccountContext:AccountContext",
+diff --git a/submodules/SettingsUI/Sources/FaithgramBadgeAdminController.swift b/submodules/SettingsUI/Sources/FaithgramBadgeAdminController.swift
+new file mode 100644
+index 0000000..ff99931
+--- /dev/null
++++ b/submodules/SettingsUI/Sources/FaithgramBadgeAdminController.swift
+@@ -0,0 +1,265 @@
++import Foundation
++import UIKit
++import AsyncDisplayKit
++import Display
++import Postbox
++import SwiftSignalKit
++import TelegramCore
++import TelegramPresentationData
++import AccountContext
++
++final class FaithgramBadgeAdminController: ViewController, UITableViewDataSource, UITableViewDelegate, UISearchBarDelegate {
++    private let context: AccountContext
++    private let table = UITableView(frame: .zero, style: .insetGrouped)
++    private let search = UISearchBar()
++    private var records: [FaithgramPreferences.BadgeGrant] = []
++    private var names: [Int64: String] = [:]
++    private var observer: NSObjectProtocol?
++    private let lookupDisposable = MetaDisposable()
++    private let actionDisposable = MetaDisposable()
++    private var ownerId: Int64 { context.account.peerId.id._internalGetInt64Value() }
++    private var authorized: Bool { FaithgramPreferences.canManageBadges(accountPeerId: ownerId) }
++
++    init(context: AccountContext) {
++        self.context = context
++        super.init(navigationBarPresentationData: NavigationBarPresentationData(presentationData: context.sharedContext.currentPresentationData.with { $0 }, style: .glass))
++        self.title = "badges"
++        self.statusBar.statusBarStyle = .White
++        if self.authorized {
++            self.navigationItem.rightBarButtonItems = [UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addPressed)), UIBarButtonItem(title: "sync", style: .plain, target: self, action: #selector(syncPressed))]
++        }
++        self.observer = NotificationCenter.default.addObserver(forName: FaithgramPreferences.changed, object: nil, queue: .main) { [weak self] _ in self?.reloadRecords() }
++    }
++    required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
++    deinit {
++        if let observer { NotificationCenter.default.removeObserver(observer) }
++        lookupDisposable.dispose()
++        actionDisposable.dispose()
++    }
++    override func loadDisplayNode() {
++        self.displayNode = ASDisplayNode()
++        self.displayNode.backgroundColor = .black
++        self.displayNodeDidLoad()
++        self.table.backgroundColor = .black
++        self.table.dataSource = self
++        self.table.delegate = self
++        self.table.rowHeight = UITableView.automaticDimension
++        self.table.estimatedRowHeight = 76
++        self.table.contentInsetAdjustmentBehavior = .never
++        self.table.keyboardDismissMode = .onDrag
++        self.search.placeholder = "peer id, name or badge"
++        self.search.searchBarStyle = .minimal
++        self.search.barStyle = .black
++        self.search.showsScopeBar = true
++        self.search.scopeButtonTitles = ["active", "all", "revoked", "expired"]
++        self.search.delegate = self
++        self.search.autocapitalizationType = .none
++        self.search.autocorrectionType = .no
++        self.view.addSubview(self.table)
++        self.reloadRecords()
++    }
++    override func containerLayoutUpdated(_ layout: ContainerViewLayout, transition: ContainedViewLayoutTransition) {
++        super.containerLayoutUpdated(layout, transition: transition)
++        let top = self.navigationLayout(layout: layout).navigationFrame.maxY
++        transition.updateFrame(view: self.table, frame: CGRect(x: 0, y: top, width: layout.size.width, height: layout.size.height - top))
++        self.table.contentInset.bottom = max(layout.intrinsicInsets.bottom, layout.inputHeight ?? 0) + 16
++        self.search.frame = CGRect(x: 0, y: 0, width: layout.size.width, height: 100)
++        self.table.tableHeaderView = self.search
++    }
++    override func viewWillAppear(_ animated: Bool) {
++        super.viewWillAppear(animated)
++        if self.authorized, FaithgramBadgeService.shared.isConfigured { self.pullAdminRecords() }
++    }
++    private func reloadRecords() {
++        guard self.authorized else { self.records = []; self.table.reloadData(); return }
++        let all = FaithgramBadgeService.shared.recordsForAdmin(accountPeerId: ownerId)
++        let query = (self.search.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
++        self.records = all.filter { record in
++            let stateMatches: Bool
++            switch self.search.selectedScopeButtonIndex {
++            case 1: stateMatches = true
++            case 2: stateMatches = record.revokedAt != nil
++            case 3: stateMatches = record.revokedAt == nil && !record.isActive()
++            default: stateMatches = record.isActive()
++            }
++            let text = "\(record.peerId) \(self.names[record.peerId] ?? "") \(record.role.title) \(record.note)".lowercased()
++            return stateMatches && (query.isEmpty || text.contains(query))
++        }.sorted { ($0.issuedAt ?? .distantPast) > ($1.issuedAt ?? .distantPast) }
++        self.table.reloadData()
++        let ids = Set(all.map { $0.peerId }).filter { self.names[$0] == nil }
++        guard !ids.isEmpty else { return }
++        self.lookupDisposable.set((self.context.account.postbox.transaction { transaction -> [Int64: String] in
++            var result: [Int64: String] = [:]
++            for id in ids {
++                if let peer = transaction.getPeer(PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(id))) {
++                    result[id] = EnginePeer(peer).debugDisplayTitle
++                }
++            }
++            return result
++        } |> deliverOnMainQueue).start(next: { [weak self] values in
++            guard let self, !values.isEmpty else { return }
++            self.names.merge(values, uniquingKeysWith: { _, new in new })
++            self.reloadRecords()
++        }))
++    }
++    func numberOfSections(in tableView: UITableView) -> Int { return 1 }
++    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { authorized ? max(records.count, 1) : 0 }
++    func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { "\(records.count) badges · " + (FaithgramBadgeService.shared.isConfigured ? FaithgramBadgeService.shared.syncStatus : "local registry") }
++    func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
++        return FaithgramBadgeService.shared.isConfigured ? "Only peer id 1000 can manage badges. Updates are synchronized through the signed registry. Private notes stay in the admin API." : "Only peer id 1000 can manage badges. The shared service is not configured. Previous local grants have no recorded issue date."
++    }
++    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
++        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
++        cell.backgroundColor = UIColor(white: 0.105, alpha: 1)
++        cell.textLabel?.textColor = .white
++        cell.detailTextLabel?.textColor = .gray
++        cell.detailTextLabel?.numberOfLines = 0
++        cell.tintColor = .white
++        guard !records.isEmpty else { cell.textLabel?.text = "no badges found"; cell.selectionStyle = .none; return cell }
++        let record = records[indexPath.row]
++        cell.textLabel?.text = names[record.peerId] ?? String(record.peerId)
++        cell.detailTextLabel?.text = record.role.title + " · " + self.dateText(record.issuedAt) + "\n" + String(record.peerId) + " · " + self.stateText(record)
++        cell.imageView?.image = UIImage(systemName: record.role.symbol)
++        cell.accessoryType = .disclosureIndicator
++        return cell
++    }
++    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
++        tableView.deselectRow(at: indexPath, animated: true)
++        guard authorized, !records.isEmpty else { return }
++        self.showRecord(records[indexPath.row])
++    }
++    func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) { self.reloadRecords() }
++    func searchBar(_ searchBar: UISearchBar, selectedScopeButtonIndexDidChange selectedScope: Int) { self.reloadRecords() }
++    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) { searchBar.resignFirstResponder() }
++    @objc private func addPressed() { guard authorized else { return }; self.showGrantForm(existing: nil) }
++
++    private func dateText(_ date: Date?) -> String {
++        guard let date else { return "issue date unavailable" }
++        let formatter = DateFormatter()
++        formatter.dateStyle = .medium
++        formatter.timeStyle = .short
++        return formatter.string(from: date)
++    }
++    private func stateText(_ record: FaithgramPreferences.BadgeGrant) -> String {
++        if record.revokedAt != nil { return "revoked" }
++        return record.isActive() ? "active" : "expired"
++    }
++    private func showRecord(_ record: FaithgramPreferences.BadgeGrant) {
++        guard authorized else { return }
++        var message = "peer id: \(record.peerId)\nissued: \(dateText(record.issuedAt))\nissued by: \(record.issuedBy)\nexpires: \(record.expiresAt.map { dateText($0) } ?? "never")"
++        if let date = record.revokedAt { message += "\nrevoked: " + dateText(date) }
++        if !record.note.isEmpty { message += "\n\n" + record.note }
++        let alert = UIAlertController(title: record.role.title, message: message, preferredStyle: .alert)
++        alert.addAction(UIAlertAction(title: "open profile", style: .default, handler: { [weak self] _ in self?.openProfile(record.peerId) }))
++        alert.addAction(UIAlertAction(title: "copy peer id", style: .default, handler: { _ in UIPasteboard.general.string = String(record.peerId) }))
++        alert.addAction(UIAlertAction(title: "issue or update badge", style: .default, handler: { [weak self] _ in self?.showGrantForm(existing: record) }))
++        if record.revokedAt == nil {
++            alert.addAction(UIAlertAction(title: "revoke badge", style: .destructive, handler: { [weak self] _ in
++                guard let self, self.authorized else { return }
++                if FaithgramBadgeService.shared.isConfigured {
++                    FaithgramBadgeService.shared.revoke(id: record.id, accountPeerId: self.ownerId) { [weak self] success in
++                        self?.reloadRecords()
++                        if !success { self?.showError("The badge was not revoked. Check the service and administrator key.") }
++                    }
++                } else { let _ = FaithgramPreferences.revokeBadge(id: record.id, accountPeerId: self.ownerId) }
++            }))
++        }
++        alert.addAction(UIAlertAction(title: "close", style: .cancel))
++        context.sharedContext.mainWindow?.presentNative(alert)
++    }
++    private func openProfile(_ peerId: Int64) {
++        guard authorized else { return }
++        let id = PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(peerId))
++        actionDisposable.set((context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: id)) |> deliverOnMainQueue).start(next: { [weak self] peer in
++            guard let self else { return }
++            guard let peer, let controller = self.context.sharedContext.makePeerInfoController(context: self.context, updatedPresentationData: nil, peer: peer, mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) else {
++                self.showError("This profile is not available locally yet. Open a chat with this user, or add a badge using their @username.")
++                return
++            }
++            (self.navigationController as? NavigationController)?.pushViewController(controller)
++        }))
++    }
++    private func showGrantForm(existing: FaithgramPreferences.BadgeGrant?) {
++        guard authorized else { return }
++        let alert = UIAlertController(title: existing == nil ? "assign badge" : "update badge", message: "User peer id or @username. Leave validity empty for a permanent badge. Notes are visible only in this admin screen.", preferredStyle: .alert)
++        alert.addTextField { field in field.placeholder = "peer id or @username"; field.text = existing.map { String($0.peerId) }; field.autocapitalizationType = .none; field.autocorrectionType = .no }
++        alert.addTextField { field in field.placeholder = "admin note"; field.text = existing?.note }
++        alert.addTextField { field in
++            field.placeholder = "validity in days (optional)"
++            field.keyboardType = .numberPad
++            if let expiry = existing?.expiresAt { field.text = String(max(1, Int(ceil(expiry.timeIntervalSinceNow / 86400)))) }
++        }
++        for role in FaithgramPreferences.Badge.allCases {
++            alert.addAction(UIAlertAction(title: role.title, style: .default, handler: { [weak self] _ in
++                guard let self, self.authorized else { return }
++                let input = alert.textFields?[0].text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
++                let note = alert.textFields?[1].text ?? ""
++                let validity = alert.textFields?[2].text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
++                guard note.utf8.count <= 1024 else { self.showError("The note is too long."); return }
++                var expiry: Date?
++                if !validity.isEmpty {
++                    guard let days = Int(validity), (1...36500).contains(days) else { self.showError("Enter a validity from 1 to 36500 days, or leave it empty."); return }
++                    expiry = Date().addingTimeInterval(Double(days) * 86400)
++                }
++                if let id = Int64(input), id > 0 { self.issue(role, peerId: id, note: note, expiry: expiry); return }
++                let name = input.hasPrefix("@") ? String(input.dropFirst()) : input
++                guard !name.isEmpty else { self.showError("Enter a positive peer id or @username."); return }
++                self.actionDisposable.set((self.context.engine.peers.resolvePeerByName(name: name, referrer: nil) |> deliverOnMainQueue).start(next: { [weak self] result in
++                    guard let self else { return }
++                    if case let .result(peer) = result {
++                        guard case let .user(user)? = peer else { self.showError("A user with this username was not found."); return }
++                        self.issue(role, peerId: user.id.id._internalGetInt64Value(), note: note, expiry: expiry)
++                    }
++                }))
++            }))
++        }
++        alert.addAction(UIAlertAction(title: "cancel", style: .cancel))
++        context.sharedContext.mainWindow?.presentNative(alert)
++    }
++    private func issue(_ role: FaithgramPreferences.Badge, peerId: Int64, note: String, expiry: Date?) {
++        if FaithgramBadgeService.shared.isConfigured {
++            FaithgramBadgeService.shared.grant(role, peerId: peerId, accountPeerId: ownerId, note: note, expiresAt: expiry) { [weak self] success in
++                self?.reloadRecords()
++                if !success { self?.showError("The badge was not saved. Check the service and administrator key.") }
++            }
++        } else if !FaithgramPreferences.grantBadge(role, peerId: peerId, accountPeerId: ownerId, note: note, expiresAt: expiry) { showError("The badge could not be saved.") }
++    }
++    private func pullAdminRecords() {
++        FaithgramBadgeService.shared.fetchAdminRecords(accountPeerId: ownerId) { [weak self] success in
++            self?.reloadRecords()
++            if !success { self?.showError("Admin access failed. Enter the administrator key using sync, and check the server connection.") }
++        }
++    }
++    @objc private func syncPressed() {
++        guard authorized else { return }
++        let service = FaithgramBadgeService.shared
++        let alert = UIAlertController(title: "badge service", message: service.isConfigured ? service.endpoint + "\n" + service.syncStatus + "\nAdministrator key: " + (service.hasAdminToken(accountPeerId: ownerId) ? "saved in Keychain" : "not set") : "The shared service endpoint and signing key have not been added to this build.", preferredStyle: .alert)
++        if service.isConfigured {
++            alert.addAction(UIAlertAction(title: "refresh registry", style: .default, handler: { [weak self] _ in
++                service.refresh(force: true)
++                self?.pullAdminRecords()
++            }))
++            alert.addAction(UIAlertAction(title: "set administrator key", style: .default, handler: { [weak self] _ in self?.enterAdminKey() }))
++        }
++        alert.addAction(UIAlertAction(title: "close", style: .cancel))
++        context.sharedContext.mainWindow?.presentNative(alert)
++    }
++    private func enterAdminKey() {
++        guard authorized else { return }
++        let alert = UIAlertController(title: "administrator key", message: "Enter the private admin-token created on your server. The key stays in this device's Keychain and is sent only to the configured badge service over HTTPS.", preferredStyle: .alert)
++        alert.addTextField { field in field.isSecureTextEntry = true; field.autocorrectionType = .no; field.autocapitalizationType = .none; field.textContentType = .password }
++        alert.addAction(UIAlertAction(title: "save", style: .default, handler: { [weak self] _ in
++            guard let self, self.authorized else { return }
++            let token = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
++            if FaithgramBadgeService.shared.storeAdminToken(token, accountPeerId: self.ownerId) { self.pullAdminRecords() }
++            else { self.showError("Enter the 64-character administrator key from your server.") }
++        }))
++        alert.addAction(UIAlertAction(title: "cancel", style: .cancel))
++        context.sharedContext.mainWindow?.presentNative(alert)
++    }
++    private func showError(_ text: String) {
++        let alert = UIAlertController(title: "faithgram", message: text, preferredStyle: .alert)
++        alert.addAction(UIAlertAction(title: "close", style: .cancel))
++        context.sharedContext.mainWindow?.presentNative(alert)
++    }
++}
 diff --git a/submodules/SettingsUI/Sources/FaithgramHistoryController.swift b/submodules/SettingsUI/Sources/FaithgramHistoryController.swift
 new file mode 100644
 index 0000000..4c39a6f
@@ -806,7 +1148,7 @@ index 0000000..2106db3
 +}
 diff --git a/submodules/SettingsUI/Sources/PatchClientSettingsController.swift b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
 new file mode 100644
-index 0000000..67216d0
+index 0000000..47dae5d
 --- /dev/null
 +++ b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
 @@ -0,0 +1,367 @@
@@ -869,8 +1211,6 @@ index 0000000..67216d0
 +    case toggle(PatchClientOption)
 +    case ghost
 +    case text(title: String, key: String, fallback: String)
-+    case badge(peerId: Int64, role: FaithgramPreferences.Badge)
-+    case addBadge
 +    case action(FaithgramAction)
 +}
 +
@@ -889,6 +1229,7 @@ index 0000000..67216d0
 +    case groupMedia = "Save media from groups"
 +    case channelMedia = "Save media from channels"
 +    case notifications = "Sounds and notification settings"
++    case activityStatus = "Live Activity status"
 +}
 +
 +private final class FaithgramToggle: UISwitch {
@@ -990,7 +1331,7 @@ index 0000000..67216d0
 +                self.rows += [.action(.lockNow), .action(.passcode)]
 +            }
 +            if category == .accounts { self.rows += [.action(.exportSessions), .action(.restoreSessions)] }
-+            if category == .appearance { self.rows += [.action(.theme), .action(.stickers)] }
++            if category == .appearance { self.rows += [.action(.activityStatus), .action(.theme), .action(.stickers)] }
 +            if category == .notifications { self.rows.append(.action(.notifications)) }
 +            if category == .messages {
 +                self.rows += [.text(title: "Deleted mark", key: "deletedMark", fallback: "🧹"),
@@ -1001,14 +1342,12 @@ index 0000000..67216d0
 +                self.rows.append(.text(title: "Translation language", key: "translationTarget", fallback: Locale.current.identifier.components(separatedBy: CharacterSet(charactersIn: "_-" )).first ?? "en"))
 +                self.rows += [.action(.privateMedia), .action(.groupMedia), .action(.channelMedia), .action(.downloads)]
 +            }
-+            if category == .badges {
-+                self.rows = FaithgramPreferences.badgeGrants.sorted { (Int64($0.key) ?? 0) < (Int64($1.key) ?? 0) }.compactMap { key, value in
-+                    guard let id = Int64(key) else { return nil }
-+                    return .badge(peerId: id, role: value)
-+                }
-+                if self.context.account.peerId.id._internalGetInt64Value() == FaithgramPreferences.badgeOwnerId { self.rows.append(.addBadge) }
-+            }
-+        } else { self.rows = FaithgramCategory.allCases.map(FaithgramRow.category) }
++            if category == .badges { self.rows = [] }
++        } else {
++            self.rows = FaithgramCategory.allCases.filter {
++                $0 != .badges || FaithgramPreferences.canManageBadges(accountPeerId: self.context.account.peerId.id._internalGetInt64Value())
++            }.map(FaithgramRow.category)
++        }
 +        if self.isNodeLoaded { self.table.reloadData() }
 +    }
 +    func numberOfSections(in tableView: UITableView) -> Int { return 1 }
@@ -1020,6 +1359,7 @@ index 0000000..67216d0
 +        cell.textLabel?.textColor = .white
 +        cell.textLabel?.font = .preferredFont(forTextStyle: .body)
 +        cell.textLabel?.adjustsFontForContentSizeCategory = true
++        cell.textLabel?.numberOfLines = 0
 +        cell.detailTextLabel?.textColor = .gray
 +        cell.detailTextLabel?.font = .preferredFont(forTextStyle: .footnote)
 +        cell.detailTextLabel?.numberOfLines = 0
@@ -1027,7 +1367,12 @@ index 0000000..67216d0
 +        switch self.rows[indexPath.row] {
 +        case let .category(category):
 +            cell.textLabel?.text = FaithgramPreferences.interfaceText(category.title)
-+            cell.imageView?.image = UIImage(systemName: category.symbol)
++            if let symbol = UIImage(systemName: category.symbol) {
++                cell.imageView?.image = UIGraphicsImageRenderer(size: CGSize(width: 28, height: 28)).image { _ in
++                    let size = symbol.size.aspectFitted(CGSize(width: 24, height: 24))
++                    symbol.withTintColor(.white, renderingMode: .alwaysOriginal).draw(in: CGRect(x: (28 - size.width) / 2, y: (28 - size.height) / 2, width: size.width, height: size.height))
++                }
++            }
 +            cell.accessoryType = .disclosureIndicator
 +        case let .visualField(field):
 +            cell.textLabel?.text = FaithgramPreferences.interfaceText(field.title)
@@ -1060,17 +1405,11 @@ index 0000000..67216d0
 +            let value = FaithgramPreferences.text(key, fallback: fallback)
 +            cell.detailTextLabel?.text = value.isEmpty ? FaithgramPreferences.interfaceText("Not set") : value
 +            cell.accessoryType = .disclosureIndicator
-+        case let .badge(peerId, role):
-+            cell.textLabel?.text = "\(peerId)"
-+            cell.detailTextLabel?.text = "faithgram · \(role.title)"
-+            cell.imageView?.image = UIImage(systemName: role == .betaTester ? "testtube.2" : "checkmark.seal")
 +        case let .action(action):
 +            cell.textLabel?.text = FaithgramPreferences.interfaceText(action.rawValue)
 +            cell.accessoryType = .disclosureIndicator
 +            if action == .exportSessions || action == .restoreSessions { cell.detailTextLabel?.text = FaithgramPreferences.interfaceText("Password-protected backup of active sessions") }
-+        case .addBadge:
-+            cell.textLabel?.text = FaithgramPreferences.interfaceText("Assign badge")
-+            cell.imageView?.image = UIImage(systemName: "plus.circle")
++            if action == .activityStatus { cell.detailTextLabel?.text = FaithgramPreferences.text("activityStatus", fallback: "Check permissions and signing") }
 +        }
 +        return cell
 +    }
@@ -1078,7 +1417,12 @@ index 0000000..67216d0
 +        tableView.deselectRow(at: indexPath, animated: true)
 +        switch self.rows[indexPath.row] {
 +        case let .category(category):
-+            (self.navigationController as? NavigationController)?.pushViewController(FaithgramSettingsController(context: self.context, category: category))
++            if category == .badges {
++                guard FaithgramPreferences.canManageBadges(accountPeerId: context.account.peerId.id._internalGetInt64Value()) else { return }
++                self.openSettingsPage(FaithgramBadgeAdminController(context: self.context))
++            } else {
++                self.openSettingsPage(FaithgramSettingsController(context: self.context, category: category))
++            }
 +        case let .visualField(field):
 +            if field.choices.isEmpty {
 +                self.openSettingsPage(FaithgramTextController(context: context, title: FaithgramPreferences.interfaceText(field.title), text: FaithgramVisualPreferences.value(field.key, fallback: field.fallback), save: { text in try FaithgramVisualPreferences.save(field, text: text) }))
@@ -1108,9 +1452,6 @@ index 0000000..67216d0
 +            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
 +            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Save"), style: .default, handler: { _ in FaithgramPreferences.setText(key, alert.textFields?.first?.text ?? "") }))
 +            self.context.sharedContext.mainWindow?.presentNative(alert)
-+        case .addBadge: self.editBadge(peerId: nil)
-+        case let .badge(peerId, _):
-+            if self.context.account.peerId.id._internalGetInt64Value() == FaithgramPreferences.badgeOwnerId { self.editBadge(peerId: peerId) }
 +        default: break
 +        }
 +    }
@@ -1157,21 +1498,22 @@ index 0000000..67216d0
 +        case .groupMedia: openSettingsPage(saveIncomingMediaController(context: context, scope: .peerType(.groups)))
 +        case .channelMedia: openSettingsPage(saveIncomingMediaController(context: context, scope: .peerType(.channels)))
 +        case .notifications: openSettingsPage(notificationsAndSoundsController(context: context, exceptionsList: nil))
-+        }
-+    }
-+    private func editBadge(peerId: Int64?) {
-+        let alert = UIAlertController(title: "faithgram badge", message: FaithgramPreferences.interfaceText("Enter a user peer id. Badges are stored on this installation."), preferredStyle: .alert)
-+        alert.addTextField { field in field.keyboardType = .numberPad; field.text = peerId.map(String.init) }
-+        for role in FaithgramPreferences.Badge.allCases {
-+            alert.addAction(UIAlertAction(title: role.title, style: .default, handler: { _ in
-+                guard let value = alert.textFields?.first?.text, let id = Int64(value), id > 0 else { return }
-+                FaithgramPreferences.setBadge(role, peerId: id)
++        case .activityStatus:
++            let status = FaithgramPreferences.text("activityStatus", fallback: "Live Activities require iOS 16.2 or later.")
++            let error = FaithgramPreferences.text("activityError")
++            let alert = UIAlertController(title: "faithgram live activity", message: status + (error.isEmpty ? "" : "\n\n" + error), preferredStyle: .alert)
++            alert.addAction(UIAlertAction(title: "start or restart", style: .default, handler: { _ in
++                PatchClientPolicy.setEnabled(.dynamicIsland, true)
++                NotificationCenter.default.post(name: FaithgramPreferences.restartLiveActivity, object: nil)
 +            }))
++            alert.addAction(UIAlertAction(title: "iOS settings", style: .default, handler: { _ in
++                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
++            }))
++            alert.addAction(UIAlertAction(title: "close", style: .cancel))
++            context.sharedContext.mainWindow?.presentNative(alert)
 +        }
-+        if let peerId = peerId { alert.addAction(UIAlertAction(title: "remove badge", style: .destructive, handler: { _ in FaithgramPreferences.setBadge(nil, peerId: peerId) })) }
-+        alert.addAction(UIAlertAction(title: "cancel", style: .cancel))
-+        self.context.sharedContext.mainWindow?.presentNative(alert)
 +    }
++
 +}
 +
 +public func patchClientSettingsController(context: AccountContext) -> ViewController {
@@ -1570,6 +1912,203 @@ index 0000000..bad6623
 +            }
 +            return EmptyDisposable
 +        }
++    }
++}
+diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramBadgeService.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramBadgeService.swift
+new file mode 100644
+index 0000000..c3a6310
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramBadgeService.swift
+@@ -0,0 +1,191 @@
++import Foundation
++import CryptoKit
++import Security
++
++public enum FaithgramBadgeServiceError: Error {
++    case configuration, unauthorized, network, invalidSignature, invalidRegistry, server(Int)
++}
++
++public struct FaithgramBadgeSnapshot: Codable {
++    public let version: Int
++    public let revision: Int64
++    public let generatedAt: Date
++    public let grants: [FaithgramPreferences.BadgeGrant]
++}
++
++private final class FaithgramBadgeHTTPDelegate: NSObject, URLSessionTaskDelegate {
++    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
++        guard let original = task.originalRequest?.url, let target = request.url,
++              target.scheme == "https", original.host == target.host, original.port == target.port else { completionHandler(nil); return }
++        completionHandler(request)
++    }
++}
++
++public final class FaithgramBadgeService {
++    public static let shared = FaithgramBadgeService()
++    private struct Configuration: Codable { let endpoint: String; let publicKey: String }
++    private struct Envelope: Codable { let payload: Data; let signature: Data }
++    private struct AdminResponse: Codable { let grants: [FaithgramPreferences.BadgeGrant] }
++    private var configuration: Configuration?
++    private var lastRefresh = Date.distantPast
++    private var refreshing = false
++    private var adminRecords: [FaithgramPreferences.BadgeGrant] = []
++    private var revision: Int64 = 0
++    private var timer: Timer?
++    private let session: URLSession
++    private let tokenService = "faithgram.badges.admin"
++
++    public var isConfigured: Bool { configuration != nil }
++    public var endpoint: String { configuration?.endpoint ?? "" }
++    public var syncStatus: String { FaithgramPreferences.text("badgeSyncStatus", fallback: "not configured") }
++
++    private init() {
++        let sessionConfiguration = URLSessionConfiguration.ephemeral
++        sessionConfiguration.httpCookieStorage = nil
++        sessionConfiguration.urlCache = nil
++        sessionConfiguration.timeoutIntervalForRequest = 15
++        sessionConfiguration.timeoutIntervalForResource = 25
++        session = URLSession(configuration: sessionConfiguration, delegate: FaithgramBadgeHTTPDelegate(), delegateQueue: nil)
++        if let path = Bundle.main.path(forResource: "FaithgramBadgeService", ofType: "json"),
++           let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
++           let value = try? JSONDecoder().decode(Configuration.self, from: data),
++           let components = URLComponents(string: value.endpoint), components.scheme == "https", components.host != nil,
++           components.user == nil, components.password == nil, components.query == nil, components.fragment == nil,
++           Data(base64Encoded: value.publicKey)?.count == 32 {
++            configuration = value
++            FaithgramPreferences.setRemoteBadgeRecords([])
++        }
++        if let configuration, let data = UserDefaults.standard.data(forKey: "faithgram.badgeSnapshot"),
++           let snapshot = try? Self.verify(data, publicKey: configuration.publicKey, now: Date(), allowCached: true) {
++            revision = snapshot.revision
++            FaithgramPreferences.setRemoteBadgeRecords(snapshot.grants)
++        }
++    }
++    public static func verify(_ data: Data, publicKey: String, now: Date = Date(), minimumRevision: Int64 = 0, allowCached: Bool = false) throws -> FaithgramBadgeSnapshot {
++        guard data.count <= 8 * 1024 * 1024, let keyData = Data(base64Encoded: publicKey), keyData.count == 32 else { throw FaithgramBadgeServiceError.invalidRegistry }
++        let envelope = try JSONDecoder().decode(Envelope.self, from: data)
++        let key = try Curve25519.Signing.PublicKey(rawRepresentation: keyData)
++        guard key.isValidSignature(envelope.signature, for: envelope.payload) else { throw FaithgramBadgeServiceError.invalidSignature }
++        let decoder = JSONDecoder()
++        decoder.dateDecodingStrategy = .secondsSince1970
++        let snapshot = try decoder.decode(FaithgramBadgeSnapshot.self, from: envelope.payload)
++        let age = now.timeIntervalSince(snapshot.generatedAt)
++        guard snapshot.version == 1, snapshot.revision >= minimumRevision, snapshot.revision >= 1,
++              age >= -300, age <= (allowCached ? 7 * 86400 : 86400), snapshot.grants.count <= 20000 else { throw FaithgramBadgeServiceError.invalidRegistry }
++        var ids = Set<String>()
++        var roles = Set<String>()
++        for grant in snapshot.grants {
++            guard !grant.id.isEmpty, grant.id.utf8.count <= 128, grant.peerId > 0,
++                  grant.issuedBy == FaithgramPreferences.badgeOwnerId, grant.note.isEmpty,
++                  grant.revokedAt == nil, ids.insert(grant.id).inserted,
++                  roles.insert("\(grant.peerId):\(grant.role.rawValue)").inserted else { throw FaithgramBadgeServiceError.invalidRegistry }
++        }
++        return snapshot
++    }
++    public func setForeground(_ value: Bool) {
++        timer?.invalidate()
++        timer = nil
++        guard value, isConfigured else { return }
++        refresh()
++        timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in self?.refresh() }
++    }
++    public func refresh(force: Bool = false, completion: ((Bool) -> Void)? = nil) {
++        guard isConfigured else { completion?(false); return }
++        guard !refreshing, force || Date().timeIntervalSince(lastRefresh) > 60 else { completion?(false); return }
++        refreshing = true
++        lastRefresh = Date()
++        request(path: "v1/badges", actor: nil, body: nil) { [weak self] result in
++            guard let self else { return }
++            self.refreshing = false
++            do {
++                let data = try result.get()
++                guard let configuration = self.configuration else { throw FaithgramBadgeServiceError.configuration }
++                let snapshot = try Self.verify(data, publicKey: configuration.publicKey, minimumRevision: self.revision)
++                self.revision = snapshot.revision
++                UserDefaults.standard.set(data, forKey: "faithgram.badgeSnapshot")
++                FaithgramPreferences.setRemoteBadgeRecords(snapshot.grants)
++                FaithgramPreferences.setText("badgeSyncStatus", "synced · revision \(snapshot.revision)")
++                completion?(true)
++            } catch {
++                FaithgramPreferences.setText("badgeSyncStatus", "sync failed · keeping the last verified list")
++                completion?(false)
++            }
++        }
++    }
++    public func recordsForAdmin(accountPeerId: Int64) -> [FaithgramPreferences.BadgeGrant] {
++        guard FaithgramPreferences.canManageBadges(accountPeerId: accountPeerId) else { return [] }
++        return isConfigured ? adminRecords : FaithgramPreferences.localBadgeRecords
++    }
++    public func fetchAdminRecords(accountPeerId: Int64, completion: @escaping (Bool) -> Void) {
++        request(path: "v1/admin/badges", actor: accountPeerId, body: nil) { [weak self] result in
++            do {
++                let decoder = JSONDecoder()
++                decoder.dateDecodingStrategy = .secondsSince1970
++                let value = try decoder.decode(AdminResponse.self, from: result.get())
++                guard value.grants.count <= 20000 else { throw FaithgramBadgeServiceError.invalidRegistry }
++                self?.adminRecords = value.grants
++                completion(true)
++            } catch { completion(false) }
++        }
++    }
++    public func grant(_ role: FaithgramPreferences.Badge, peerId: Int64, accountPeerId: Int64, note: String, expiresAt: Date?, completion: @escaping (Bool) -> Void) {
++        var body: [String: Any] = ["peerId": peerId, "role": role.rawValue, "note": note]
++        if let expiresAt { body["expiresAt"] = expiresAt.timeIntervalSince1970 }
++        mutate(path: "v1/admin/grant", actor: accountPeerId, body: body, completion: completion)
++    }
++    public func revoke(id: String, accountPeerId: Int64, completion: @escaping (Bool) -> Void) {
++        mutate(path: "v1/admin/revoke", actor: accountPeerId, body: ["id": id], completion: completion)
++    }
++    private func mutate(path: String, actor: Int64, body: [String: Any], completion: @escaping (Bool) -> Void) {
++        request(path: path, actor: actor, body: body) { [weak self] result in
++            guard case .success = result, let self else { completion(false); return }
++            self.refresh(force: true)
++            self.fetchAdminRecords(accountPeerId: actor, completion: completion)
++        }
++    }
++    public func storeAdminToken(_ token: String, accountPeerId: Int64) -> Bool {
++        guard FaithgramPreferences.canManageBadges(accountPeerId: accountPeerId), token.count == 64,
++              token.allSatisfy({ $0.isHexDigit }) else { return false }
++        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: tokenService, kSecAttrAccount as String: String(accountPeerId)]
++        let data = Data(token.utf8)
++        let updated = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
++        if updated == errSecSuccess { return true }
++        guard updated == errSecItemNotFound else { return false }
++        var insert = query
++        insert[kSecValueData as String] = data
++        insert[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
++        return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
++    }
++    public func hasAdminToken(accountPeerId: Int64) -> Bool { adminToken(accountPeerId) != nil }
++    private func adminToken(_ actor: Int64) -> String? {
++        guard FaithgramPreferences.canManageBadges(accountPeerId: actor) else { return nil }
++        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: tokenService, kSecAttrAccount as String: String(actor), kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
++        var result: CFTypeRef?
++        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
++        return String(data: data, encoding: .utf8)
++    }
++    private func request(path: String, actor: Int64?, body: [String: Any]?, completion: @escaping (Result<Data, Error>) -> Void) {
++        guard let configuration, let baseURL = URL(string: configuration.endpoint) else { completion(.failure(FaithgramBadgeServiceError.configuration)); return }
++        var request = URLRequest(url: baseURL.appendingPathComponent(path))
++        request.cachePolicy = .reloadIgnoringLocalCacheData
++        request.setValue("application/json", forHTTPHeaderField: "Accept")
++        if let actor {
++            guard let token = adminToken(actor) else { completion(.failure(FaithgramBadgeServiceError.unauthorized)); return }
++            request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
++            request.setValue(String(actor), forHTTPHeaderField: "X-Faithgram-Actor")
++        }
++        if let body {
++            guard let data = try? JSONSerialization.data(withJSONObject: body) else { completion(.failure(FaithgramBadgeServiceError.invalidRegistry)); return }
++            request.httpMethod = "POST"
++            request.httpBody = data
++            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
++        }
++        session.dataTask(with: request) { data, response, error in
++            let result: Result<Data, Error>
++            if let error { result = .failure(error) }
++            else if let response = response as? HTTPURLResponse, (200...299).contains(response.statusCode), let data, data.count <= 8 * 1024 * 1024 { result = .success(data) }
++            else { result = .failure(FaithgramBadgeServiceError.server((response as? HTTPURLResponse)?.statusCode ?? 0)) }
++            DispatchQueue.main.async { completion(result) }
++        }.resume()
 +    }
 +}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramBlockedPeers.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramBlockedPeers.swift
@@ -2213,14 +2752,15 @@ index 0000000..2ead6e9
 +}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramPreferences.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramPreferences.swift
 new file mode 100644
-index 0000000..c0f0011
+index 0000000..86cfa97
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramPreferences.swift
-@@ -0,0 +1,95 @@
+@@ -0,0 +1,200 @@
 +import Foundation
 +
 +public enum FaithgramPreferences {
 +    public static let changed = Notification.Name("faithgram.preferences.changed")
++    public static let restartLiveActivity = Notification.Name("faithgram.activity.restart")
 +    private static let defaults = UserDefaults.standard
 +
 +    public static func text(_ key: String, fallback: String = "") -> String {
@@ -2270,13 +2810,14 @@ index 0000000..c0f0011
 +    public enum Badge: String, Codable, CaseIterable {
 +        case developer
 +        case betaTester
++        case paidSubscriber
 +        case verified
 +
 +        public var fileId: Int64? {
 +            switch self {
 +            case .developer: return 5988023995125993550
 +            case .verified: return 5951665890079544884
-+            case .betaTester: return nil
++            case .betaTester, .paidSubscriber: return nil
 +            }
 +        }
 +
@@ -2284,32 +2825,135 @@ index 0000000..c0f0011
 +            switch self {
 +            case .developer: return "developer"
 +            case .betaTester: return "beta tester"
++            case .paidSubscriber: return "paid subscriber"
 +            case .verified: return "verified user"
++            }
++        }
++
++        public var explanation: String {
++            switch self {
++            case .developer: return "contributed to the development of faithgram and received a unique developer badge"
++            case .betaTester, .paidSubscriber: return "supported the development of faithgram and received a unique badge"
++            case .verified: return "verified by the developers of faithgram and received a unique badge"
++            }
++        }
++
++        public var symbol: String {
++            switch self {
++            case .developer: return "hammer.fill"
++            case .betaTester: return "ladybug.fill"
++            case .paidSubscriber: return "heart.fill"
++            case .verified: return "checkmark.seal.fill"
 +            }
 +        }
 +    }
 +
 +    public static let badgeOwnerId: Int64 = 1000
 +
-+    public static var badgeGrants: [String: Badge] {
-+        guard let data = defaults.data(forKey: "faithgram.badgeGrants"),
-+              let grants = try? JSONDecoder().decode([String: Badge].self, from: data) else {
-+            return [String(badgeOwnerId): .developer]
++    public struct BadgeGrant: Codable, Equatable {
++        public let id: String
++        public let peerId: Int64
++        public let role: Badge
++        public let issuedAt: Date?
++        public let issuedBy: Int64
++        public var expiresAt: Date?
++        public var note: String
++        public var revokedAt: Date?
++
++        public func isActive(at date: Date = Date()) -> Bool {
++            return revokedAt == nil && (expiresAt == nil || expiresAt! > date)
 +        }
-+        return grants
++    }
++
++    public static func canManageBadges(accountPeerId: Int64) -> Bool {
++        return accountPeerId == badgeOwnerId
++    }
++
++    private static let badgeLock = NSLock()
++    private static var remoteBadgeRecords: [BadgeGrant]?
++
++    public static func setRemoteBadgeRecords(_ records: [BadgeGrant]) {
++        badgeLock.lock()
++        let changedValue = remoteBadgeRecords != records
++        remoteBadgeRecords = records
++        badgeLock.unlock()
++        if changedValue { NotificationCenter.default.post(name: changed, object: nil) }
++    }
++
++    public static var allBadgeGrants: [BadgeGrant] {
++        badgeLock.lock()
++        let records = remoteBadgeRecords
++        badgeLock.unlock()
++        return records ?? localBadgeRecords
++    }
++
++    public static var localBadgeRecords: [BadgeGrant] {
++        if let data = defaults.data(forKey: "faithgram.badgeRecords"),
++           let records = try? JSONDecoder().decode([BadgeGrant].self, from: data) {
++            return records
++        }
++        let legacy: [String: Badge]
++        if let data = defaults.data(forKey: "faithgram.badgeGrants"),
++           let grants = try? JSONDecoder().decode([String: Badge].self, from: data) {
++            legacy = grants
++        } else {
++            legacy = [String(badgeOwnerId): .developer]
++        }
++        return legacy.compactMap { key, role in
++            guard let peerId = Int64(key), peerId > 0 else { return nil }
++            return BadgeGrant(id: "legacy-\(peerId)-\(role.rawValue)", peerId: peerId, role: role, issuedAt: nil, issuedBy: badgeOwnerId, expiresAt: nil, note: "", revokedAt: nil)
++        }
++    }
++
++    public static var badgeGrants: [String: Badge] {
++        var result: [String: Badge] = [:]
++        for record in allBadgeGrants where record.isActive() {
++            if result[String(record.peerId)] == nil { result[String(record.peerId)] = record.role }
++        }
++        return result
 +    }
 +
 +    public static func badge(for peerId: Int64) -> Badge? {
-+        return badgeGrants[String(peerId)]
++        return badges(for: peerId).first?.role
 +    }
 +
-+    public static func setBadge(_ badge: Badge?, peerId: Int64) {
-+        var grants = badgeGrants
-+        grants[String(peerId)] = badge
-+        if let data = try? JSONEncoder().encode(grants) {
-+            defaults.set(data, forKey: "faithgram.badgeGrants")
-+            NotificationCenter.default.post(name: changed, object: nil)
++    public static func badges(for peerId: Int64, at date: Date = Date()) -> [BadgeGrant] {
++        return allBadgeGrants.filter { $0.peerId == peerId && $0.isActive(at: date) }.sorted {
++            (Badge.allCases.firstIndex(of: $0.role) ?? 0) < (Badge.allCases.firstIndex(of: $1.role) ?? 0)
 +        }
++    }
++
++    @discardableResult
++    public static func grantBadge(_ role: Badge, peerId: Int64, accountPeerId: Int64, note: String = "", expiresAt: Date? = nil, now: Date = Date()) -> Bool {
++        guard canManageBadges(accountPeerId: accountPeerId), peerId > 0,
++              note.utf8.count <= 1024, expiresAt == nil || expiresAt! > now else { return false }
++        var records = localBadgeRecords
++        if let index = records.firstIndex(where: { $0.peerId == peerId && $0.role == role && $0.isActive(at: now) }) {
++            records[index].note = note
++            records[index].expiresAt = expiresAt
++        } else {
++            guard records.count < 20000 else { return false }
++            records.append(BadgeGrant(id: UUID().uuidString, peerId: peerId, role: role, issuedAt: now, issuedBy: accountPeerId, expiresAt: expiresAt, note: note, revokedAt: nil))
++        }
++        return saveBadgeRecords(records)
++    }
++
++    @discardableResult
++    public static func revokeBadge(id: String, accountPeerId: Int64, now: Date = Date()) -> Bool {
++        guard canManageBadges(accountPeerId: accountPeerId) else { return false }
++        var records = localBadgeRecords
++        guard let index = records.firstIndex(where: { $0.id == id && $0.revokedAt == nil }) else { return false }
++        records[index].revokedAt = now
++        return saveBadgeRecords(records)
++    }
++
++    private static func saveBadgeRecords(_ records: [BadgeGrant]) -> Bool {
++        if let data = try? JSONEncoder().encode(records) {
++            defaults.set(data, forKey: "faithgram.badgeRecords")
++            NotificationCenter.default.post(name: changed, object: nil)
++            return true
++        }
++        return false
 +    }
 +}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramProtocolLog.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramProtocolLog.swift
@@ -4427,34 +5071,72 @@ index 44aff19..fbc6341 100644
 +    return result
 +}
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
-index fdfd1ce..859fe90 100644
+index fdfd1ce..a1f64db 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
 +++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
-@@ -137,6 +137,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -1,4 +1,5 @@
+ import Foundation
++import TooltipUI
+ import UIKit
+ import AsyncDisplayKit
+ import Display
+@@ -137,6 +138,14 @@ final class PeerInfoHeaderNode: ASDisplayNode {
      let titleExpandedStatusIconView: ComponentHostView<Empty>
      var titleExpandedStatusIconSize: CGSize?
      
-+    let titleFaithgramBadgeView: ComponentHostView<Empty>
-+    let titleExpandedFaithgramBadgeView: ComponentHostView<Empty>
++    let titleFaithgramBadgeView: UIView
++    let titleExpandedFaithgramBadgeView: UIView
++    private var faithgramBadgeHosts: [[ComponentHostView<Empty>]] = [[], []]
++    private var faithgramBadgeFallbacks: [[UIImageView]] = [[], []]
++    private var faithgramBadgeObserver: NSObjectProtocol?
 +    var faithgramBadgeSize: CGSize?
 +    var expandedFaithgramBadgeSize: CGSize?
 +
      var subtitleRating: ComponentView<Empty>?
      
      let subtitleNodeContainer: ASDisplayNode
-@@ -243,6 +248,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -243,6 +252,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
          self.titleExpandedVerifiedIconView = ComponentHostView<Empty>()
          self.titleNode.stateNode(forKey: TitleNodeStateExpanded)?.view.addSubview(self.titleExpandedVerifiedIconView)
          
-+        self.titleFaithgramBadgeView = ComponentHostView<Empty>()
++        self.titleFaithgramBadgeView = UIView()
 +        self.titleNode.stateNode(forKey: TitleNodeStateRegular)?.view.addSubview(self.titleFaithgramBadgeView)
-+        self.titleExpandedFaithgramBadgeView = ComponentHostView<Empty>()
++        self.titleExpandedFaithgramBadgeView = UIView()
 +        self.titleNode.stateNode(forKey: TitleNodeStateExpanded)?.view.addSubview(self.titleExpandedFaithgramBadgeView)
 +
          self.titleStatusIconView = ComponentHostView<Empty>()
          self.titleNode.stateNode(forKey: TitleNodeStateRegular)?.view.addSubview(self.titleStatusIconView)
          
-@@ -602,9 +612,9 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -381,11 +395,28 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+     }
+     
+     deinit {
++        if let observer = self.faithgramBadgeObserver { NotificationCenter.default.removeObserver(observer) }
+         self.emojiStatusPackDisposable.dispose()
+     }
+     
++    private func faithgramBadgeImage(_ role: FaithgramPreferences.Badge, color: UIColor) -> UIImage {
++        let source = UIImage(systemName: role.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)) ?? UIImage(systemName: "seal.fill")
++        return UIGraphicsImageRenderer(size: CGSize(width: 26, height: 26)).image { _ in
++            source?.withTintColor(color, renderingMode: .alwaysOriginal).draw(in: CGRect(x: 3, y: 3, width: 20, height: 20))
++        }
++    }
++
++    private func showFaithgramBadge(_ grant: FaithgramPreferences.BadgeGrant, source: UIView) {
++        guard let controller = self.controller else { return }
++        let text = grant.role.title + "\n" + grant.role.explanation
++        let rect = source.convert(source.bounds, to: controller.view).insetBy(dx: -3, dy: -3)
++        let tooltip = TooltipScreen(context: self.context, account: self.context.account, sharedContext: self.context.sharedContext, text: .plain(text: text), style: .customBlur(UIColor(white: 0.08, alpha: 0.95), -4), arrowStyle: .small, location: .point(rect, .bottom), cornerRadius: 10, shouldDismissOnTouch: { _, _ in .dismiss(consume: false) })
++        controller.present(tooltip, in: .current)
++    }
++
+     override func didLoad() {
+         super.didLoad()
++        self.faithgramBadgeObserver = NotificationCenter.default.addObserver(forName: FaithgramPreferences.changed, object: nil, queue: .main) { [weak self] _ in self?.requestUpdateLayout?(false) }
+         
+         let usernameGestureRecognizer = UILongPressGestureRecognizer(target: self, action: #selector(self.handleUsernameLongPress(_:)))
+         self.usernameNodeRawContainer.view.addGestureRecognizer(usernameGestureRecognizer)
+@@ -602,9 +633,9 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                  credibilityIcon = .fake
              } else if peer.isScam {
                  credibilityIcon = .scam
@@ -4466,7 +5148,7 @@ index fdfd1ce..859fe90 100644
                  credibilityIcon = .premium
              } else {
                  credibilityIcon = .none
-@@ -612,7 +622,8 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -612,7 +643,8 @@ final class PeerInfoHeaderNode: ASDisplayNode {
              if peer.isVerified {
                  credibilityIcon = .verified
              }
@@ -4476,46 +5158,77 @@ index fdfd1ce..859fe90 100644
                  verifiedIcon = .emojiStatus(PeerEmojiStatus(content: .emoji(fileId: verificationIconFileId), expirationDate: nil))
              }
          }
-@@ -1133,6 +1144,38 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -1133,6 +1165,61 @@ final class PeerInfoHeaderNode: ASDisplayNode {
              self.titleExpandedVerifiedIconSize = expandedIconSize
          }
          
 +        do {
-+            let badge: FaithgramPreferences.Badge?
-+            if case let .user(user)? = peer {
-+                badge = FaithgramPreferences.badge(for: user.id.id._internalGetInt64Value())
-+            } else {
-+                badge = nil
++            let grants: [FaithgramPreferences.BadgeGrant]
++            if case let .user(user)? = peer { grants = FaithgramPreferences.badges(for: user.id.id._internalGetInt64Value()) }
++            else { grants = [] }
++            let containers = [self.titleFaithgramBadgeView, self.titleExpandedFaithgramBadgeView]
++            let totalWidth = grants.isEmpty ? CGFloat(0) : CGFloat(grants.count * 26 + (grants.count - 1) * 3)
++            for (state, container) in containers.enumerated() {
++                if self.faithgramBadgeHosts[state].count != grants.count {
++                    container.subviews.forEach { $0.removeFromSuperview() }
++                    self.faithgramBadgeHosts[state] = []
++                    self.faithgramBadgeFallbacks[state] = []
++                    for _ in grants {
++                        let fallback = UIImageView()
++                        fallback.contentMode = .scaleAspectFit
++                        container.addSubview(fallback)
++                        let host = ComponentHostView<Empty>()
++                        container.addSubview(host)
++                        self.faithgramBadgeHosts[state].append(host)
++                        self.faithgramBadgeFallbacks[state].append(fallback)
++                    }
++                }
++                for (index, grant) in grants.enumerated() {
++                    let host = self.faithgramBadgeHosts[state][index]
++                    let fallback = self.faithgramBadgeFallbacks[state][index]
++                    let image = self.faithgramBadgeImage(grant.role, color: navigationContentsAccentColor)
++                    let content: EmojiStatusComponent.Content
++                    if let fileId = grant.role.fileId {
++                        fallback.image = image
++                        content = .animation(content: .customEmoji(fileId: fileId), size: CGSize(width: 80, height: 80), placeholderColor: navigationContentsAccentColor, themeColor: navigationContentsAccentColor, loopMode: .forever)
++                    } else {
++                        fallback.isHidden = true
++                        content = .image(image: image, tintColor: nil)
++                    }
++                    let _ = host.update(
++                        transition: ComponentTransition(navigationTransition),
++                        component: AnyComponent(EmojiStatusComponent(context: self.context, animationCache: self.animationCache, animationRenderer: self.animationRenderer, content: content, isVisibleForAnimations: true, useSharedAnimation: true, action: { [weak self, weak host] in
++                            guard let self, let host else { return }
++                            self.showFaithgramBadge(grant, source: host)
++                        }, emojiFileUpdated: { [weak fallback] file in fallback?.isHidden = file != nil })),
++                        environment: {}, containerSize: CGSize(width: 26, height: 26)
++                    )
++                    let frame = CGRect(x: CGFloat(index * 29), y: 0, width: 26, height: 26)
++                    host.frame = frame
++                    fallback.frame = frame.insetBy(dx: 3, dy: 3)
++                    host.isAccessibilityElement = true
++                    host.accessibilityLabel = "faithgram " + grant.role.title
++                    host.accessibilityTraits = .button
++                    host.accessibilityHint = grant.role.explanation
++                }
++                container.isHidden = grants.isEmpty
 +            }
-+            let content: EmojiStatusComponent.Content
-+            if let fileId = badge?.fileId {
-+                content = .animation(content: .customEmoji(fileId: fileId), size: CGSize(width: 80, height: 80), placeholderColor: presentationData.theme.list.mediaPlaceholderColor, themeColor: navigationContentsAccentColor, loopMode: .forever)
-+            } else if badge == .betaTester {
-+                content = .image(image: UIImage(systemName: "testtube.2"), tintColor: navigationContentsAccentColor)
-+            } else {
-+                content = .none
-+            }
-+            let badgeViews = [self.titleFaithgramBadgeView, self.titleExpandedFaithgramBadgeView]
-+            var sizes: [CGSize] = []
-+            for view in badgeViews {
-+                let size = view.update(
-+                    transition: ComponentTransition(navigationTransition),
-+                    component: AnyComponent(EmojiStatusComponent(context: self.context, animationCache: self.animationCache, animationRenderer: self.animationRenderer, content: content, isVisibleForAnimations: true, useSharedAnimation: true, action: nil)),
-+                    environment: {},
-+                    containerSize: CGSize(width: 26, height: 26)
-+                )
-+                view.isAccessibilityElement = badge != nil
-+                view.accessibilityLabel = badge.map { "faithgram " + $0.title }
-+                sizes.append(badge == nil ? .zero : size)
-+            }
-+            self.faithgramBadgeSize = sizes[0]
-+            self.expandedFaithgramBadgeSize = sizes[1]
++            self.faithgramBadgeSize = CGSize(width: totalWidth, height: 26)
++            self.expandedFaithgramBadgeSize = CGSize(width: totalWidth, height: 26)
 +        }
 +
          var actualNavigationContentsColor = navigationContentsAccentColor
          actualNavigationContentsColor = presentationData.theme.chat.inputPanel.panelControlColor
          
-@@ -1579,6 +1622,15 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -1362,6 +1449,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+         let expandedAvatarHeight: CGFloat = expandedAvatarListSize.height
+         
+         var titleConstrainedSize = CGSize(width: width - textSideInset * 2.0 - (isPremium || isVerified || isFake ? 20.0 : 0.0), height: .greatestFiniteMagnitude)
++        titleConstrainedSize.width = max(40, titleConstrainedSize.width - (self.faithgramBadgeSize?.width ?? 0) - ((self.faithgramBadgeSize?.width ?? 0) > 0 ? 4 : 0))
+         if self.navigationButtonContainer.rightButtonNodes.count > 1 {
+             titleConstrainedSize.width -= 60.0
+         }
+@@ -1579,6 +1667,15 @@ final class PeerInfoHeaderNode: ASDisplayNode {
              nextExpandedIconX += 4.0 + titleExpandedCredibilityIconSize.width
          }
                  
@@ -4531,7 +5244,7 @@ index fdfd1ce..859fe90 100644
          if let verifiedIconSize = self.verifiedIconSize, let titleExpandedVerifiedIconSize = self.titleExpandedVerifiedIconSize, verifiedIconSize.width > 0.0 {
              let leftOffset: CGFloat
              let leftExpandedOffset: CGFloat
-@@ -2035,6 +2087,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -2035,6 +2132,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
              self.currentPendingStarRating = nil
          }
          
@@ -4713,7 +5426,7 @@ index 806e652..ca6ee3d 100644
                      let controller = PremiumLimitScreen(context: strongSelf.context, subject: .accounts, count: Int32(count), action: {
                          let controller = PremiumIntroScreen(context: strongSelf.context, source: .accounts)
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
-index c5f58f4..d206ded 100644
+index c5f58f4..c83efee 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
 +++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
 @@ -14,6 +14,7 @@ import TelegramStringFormatting
@@ -4724,18 +5437,22 @@ index c5f58f4..d206ded 100644
      case edit
      case phone
      case accounts
-@@ -37,6 +38,10 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
+@@ -37,6 +38,14 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
          items[section] = []
      }
      
-+    items[.faithgram]!.append(PeerInfoScreenDisclosureItem(id: 20, text: FaithgramPreferences.interfaceText("Faithgram"), icon: PresentationResourcesSettings.security, action: {
++    let faithgramIcon: UIImage?
++    if let path = Bundle.main.path(forResource: "FaithgramIcon", ofType: "png"), let image = UIImage(contentsOfFile: path) {
++        faithgramIcon = UIGraphicsImageRenderer(size: CGSize(width: 29, height: 29)).image { _ in image.draw(in: CGRect(x: 0, y: 0, width: 29, height: 29)) }
++    } else { faithgramIcon = PresentationResourcesSettings.security }
++    items[.faithgram]!.append(PeerInfoScreenDisclosureItem(id: 20, text: "faithgram", icon: faithgramIcon, action: {
 +        interaction.openSettings(.patchClient)
 +    }))
 +
      let setPhotoTitle: String
      if let peer = data.peer, !peer.profileImageRepresentations.isEmpty {
          setPhotoTitle = presentationData.strings.Settings_ChangeProfilePhoto
-@@ -251,16 +256,16 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
+@@ -251,16 +260,16 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
      
      let premiumConfiguration = PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
      let isPremiumDisabled = premiumConfiguration.isPremiumDisabled
@@ -4757,7 +5474,7 @@ index c5f58f4..d206ded 100644
                  let smallLabelFont = Font.regular(floor(presentationData.listsFontSize.itemListBaseFontSize / 17.0 * 13.0))
                  let labelFont = Font.regular(presentationData.listsFontSize.itemListBaseFontSize)
                  let labelColor = presentationData.theme.list.itemSecondaryTextColor
-@@ -273,11 +278,11 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
+@@ -273,11 +282,11 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
              }))
          }
      }
@@ -4773,7 +5490,7 @@ index c5f58f4..d206ded 100644
                  let smallLabelFont = Font.regular(floor(presentationData.listsFontSize.itemListBaseFontSize / 17.0 * 13.0))
                  let labelFont = Font.regular(presentationData.listsFontSize.itemListBaseFontSize)
                  let labelColor = presentationData.theme.list.itemSecondaryTextColor
-@@ -290,13 +295,13 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
+@@ -290,13 +299,13 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
              }))
          }
      }
@@ -4912,7 +5629,7 @@ index 4d971fd..27c8ddb 100644
              if isPremium {
                  return .single(AudioTranscription.TrialState(cooldownUntilTime: nil, remainingCount: 1))
 diff --git a/submodules/TelegramUI/Sources/AppDelegate.swift b/submodules/TelegramUI/Sources/AppDelegate.swift
-index b1ea96b..5ab9044 100644
+index b1ea96b..344d36c 100644
 --- a/submodules/TelegramUI/Sources/AppDelegate.swift
 +++ b/submodules/TelegramUI/Sources/AppDelegate.swift
 @@ -290,7 +290,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
@@ -4976,19 +5693,21 @@ index b1ea96b..5ab9044 100644
          
          if #available(iOS 13.0, *) {
              let cleanupTaskId = "\(baseAppBundleId).cleanup"
-@@ -1924,6 +1929,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+@@ -1924,6 +1929,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
      }
  
      func applicationDidEnterBackground(_ application: UIApplication) {
 +        if #available(iOS 16.2, *) { FaithgramActivityManager.shared.setActive(false) }
++        FaithgramBadgeService.shared.setForeground(false)
          let _ = (self.sharedContextPromise.get()
          |> take(1)
          |> deliverOnMainQueue).start(next: { sharedApplicationContext in
-@@ -2003,6 +2009,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+@@ -2003,6 +2010,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
      }
  
      func applicationDidBecomeActive(_ application: UIApplication) {
 +        if #available(iOS 16.2, *) { FaithgramActivityManager.shared.setActive(true) }
++        FaithgramBadgeService.shared.setForeground(true)
          self.isInForegroundValue = true
          self.isInForegroundPromise.set(true)
          self.isActiveValue = true
@@ -5113,10 +5832,10 @@ index 07cef5b..c6efcf1 100644
              actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.SharedMedia_ViewInChat, icon: { theme in
 diff --git a/submodules/TelegramUI/Sources/FaithgramActivityManager.swift b/submodules/TelegramUI/Sources/FaithgramActivityManager.swift
 new file mode 100644
-index 0000000..ddff6c1
+index 0000000..7eaaa9f
 --- /dev/null
 +++ b/submodules/TelegramUI/Sources/FaithgramActivityManager.swift
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,91 @@
 +import Foundation
 +import UIKit
 +import ActivityKit
@@ -5126,47 +5845,81 @@ index 0000000..ddff6c1
 +@available(iOS 16.2, *)
 +final class FaithgramActivityManager {
 +    static let shared = FaithgramActivityManager()
-+    private var observer: NSObjectProtocol?
++    private var observers: [NSObjectProtocol] = []
 +    private var active = false
 +    private var updating = false
 +    private var pending = false
++    private var lastEnabled: Bool?
++    private var restartRequested = false
++
 +    private init() {
-+        observer = NotificationCenter.default.addObserver(forName: FaithgramPreferences.changed, object: nil, queue: .main) { [weak self] _ in self?.refresh() }
++        active = UIApplication.shared.applicationState == .active
++        observers.append(NotificationCenter.default.addObserver(forName: FaithgramPreferences.changed, object: nil, queue: .main) { [weak self] _ in
++            guard let self, self.lastEnabled != PatchClientPolicy.isEnabled(.dynamicIsland) else { return }
++            self.refresh()
++        })
++        observers.append(NotificationCenter.default.addObserver(forName: FaithgramPreferences.restartLiveActivity, object: nil, queue: .main) { [weak self] _ in
++            guard let self else { return }
++            self.restartRequested = true
++            self.active = UIApplication.shared.applicationState == .active
++            self.refresh()
++        })
 +    }
-+    deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
++    deinit { observers.forEach { NotificationCenter.default.removeObserver($0) } }
 +    func setActive(_ active: Bool) { self.active = active; refresh() }
++    private func status(_ value: String, error: String = "") {
++        FaithgramPreferences.setText("activityStatus", value)
++        FaithgramPreferences.setText("activityError", error)
++    }
++    private var extensionInstalled: Bool {
++        guard let url = Bundle.main.builtInPlugInsURL,
++              let children = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) else { return false }
++        return children.contains { Bundle(url: $0)?.object(forInfoDictionaryKey: "CFBundleExecutable") as? String == "FaithgramActivityExtension" }
++    }
 +    private func refresh() {
 +        if updating { pending = true; return }
 +        let enabled = PatchClientPolicy.isEnabled(.dynamicIsland)
-+        let active = self.active
++        lastEnabled = enabled
 +        let activities = Activity<FaithgramActivityAttributes>.activities
-+        if !enabled {
++        if !enabled || restartRequested {
++            restartRequested = false
 +            updating = true
++            if !enabled { status("off") }
++            else { pending = true; status("restarting") }
 +            Task { @MainActor in
 +                for activity in activities { await activity.end(nil, dismissalPolicy: .immediate) }
 +                self.finished()
 +            }
 +            return
 +        }
-+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-+            FaithgramPreferences.setText("activityError", "Allow Live Activities in iOS settings to show Faithgram in Dynamic Island.")
++        guard extensionInstalled else {
++            status("extension missing", error: "The Live Activity extension was removed while signing. Disable Remove app extensions in your signing tool, then sign and install the IPA again.")
 +            return
 +        }
-+        let content = ActivityContent(state: FaithgramActivityAttributes.ContentState(active: active), staleDate: nil)
-+        if let first = activities.first {
++        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
++            status("blocked by iOS", error: "Allow Live Activities for Faithgram in iOS Settings, then return to the app.")
++            return
++        }
++        let isForeground = UIApplication.shared.applicationState == .active
++        let content = ActivityContent(state: FaithgramActivityAttributes.ContentState(active: active || isForeground), staleDate: nil)
++        if let first = activities.first(where: { $0.activityState == .active || $0.activityState == .stale }) {
 +            updating = true
 +            Task { @MainActor in
 +                await first.update(content)
-+                for extra in activities.dropFirst() { await extra.end(nil, dismissalPolicy: .immediate) }
++                for extra in activities where extra.id != first.id { await extra.end(nil, dismissalPolicy: .immediate) }
++                self.status("running · check Dynamic Island or the Lock Screen")
 +                self.finished()
 +            }
-+        } else if active && UIApplication.shared.applicationState == .active {
++        } else if isForeground {
 +            do {
 +                let _ = try Activity.request(attributes: FaithgramActivityAttributes(), content: content, pushType: nil)
-+                FaithgramPreferences.setText("activityError", "")
++                status("running · check Dynamic Island or the Lock Screen")
 +            } catch {
-+                FaithgramPreferences.setText("activityError", "iOS could not start the Live Activity. Check signing and Live Activities permissions.")
++                let failure = error as NSError
++                status("could not start", error: "\(failure.localizedDescription) (\(failure.domain): \(failure.code)). Check Live Activities permissions and the signed extension.")
 +            }
++        } else {
++            status("waiting for the app to open")
 +        }
 +    }
 +    private func finished() {

@@ -1,6 +1,6 @@
 {
   "name": "Faithgram iOS",
-  "phase": "features_built_device_testing_pending",
+  "phase": "features_written_build_pending",
   "device": {
     "reported_ios": "26.6.1",
     "signing_method": "sideloadly",
@@ -22,7 +22,7 @@
   },
   "patch": {
     "path": "patches/0001-local-policy.patch",
-    "sha256": "a2a200895db0d9593382952b1974b233af86c30f61cfaa320fc836877a34e143",
+    "sha256": "3b9ce9c6db156d00df115e91b75ebf3ca9b7fd650722f9a0e5296043eeaedccb",
     "files": [
       "Telegram/BUILD",
       "Telegram/FaithgramActivityWidget/FaithgramActivityWidget.swift",
@@ -36,7 +36,9 @@
       "submodules/FaithgramActivity/BUILD",
       "submodules/FaithgramActivity/Sources/FaithgramActivityAttributes.swift",
       "submodules/Media/LocalAudioTranscription/Sources/LocalAudioTranscription.swift",
+      "submodules/RMIntro/Sources/platform/ios/RMIntroViewController.m",
       "submodules/SettingsUI/BUILD",
+      "submodules/SettingsUI/Sources/FaithgramBadgeAdminController.swift",
       "submodules/SettingsUI/Sources/FaithgramHistoryController.swift",
       "submodules/SettingsUI/Sources/FaithgramSessionBackupController.swift",
       "submodules/SettingsUI/Sources/PatchClientSettingsController.swift",
@@ -48,6 +50,7 @@
       "submodules/TelegramCore/Sources/Network/Network.swift",
       "submodules/TelegramCore/Sources/PatchClient/FaithgramAppConfiguration.swift",
       "submodules/TelegramCore/Sources/PatchClient/FaithgramArchivedMedia.swift",
+      "submodules/TelegramCore/Sources/PatchClient/FaithgramBadgeService.swift",
       "submodules/TelegramCore/Sources/PatchClient/FaithgramBlockedPeers.swift",
       "submodules/TelegramCore/Sources/PatchClient/FaithgramGiftPresentation.swift",
       "submodules/TelegramCore/Sources/PatchClient/FaithgramHistoryStore.swift",
@@ -131,17 +134,14 @@
   },
   "validation": {
     "patch_application": "passed_against_pinned_git_objects",
-    "swift_compilation": "passed_xcode_26_2",
-    "full_ios_build": "passed_github_actions_run_37643635225",
-    "device_testing": "previous_build_5_launch_only_build_11_and_new_features_untested",
-    "ipa_created": true,
+    "swift_compilation": "pending_current_changes",
+    "full_ios_build": "pending_current_changes",
+    "device_testing": "previous_build_5_launch_only_new_features_untested",
+    "ipa_created": false,
     "python_syntax": "passed",
     "network_entry_point_coverage": "2_foreground_and_3_worker_entry_points_patched",
     "policy_tests": {
-      "status": "passed",
-      "count": 5,
-      "platform": "macos_arm64",
-      "api_source": "pinned_TelegramApi_serializers"
+      "status": "pending_current_changes"
     },
     "signing": "unsigned_current_build_previous_build_5_sideloadly_passed",
     "previous_build": {
@@ -158,9 +158,7 @@
       "artifact_zip_sha256": "121e84934f0a2aa39338ae48bc75ac957518f2a9a0f66d81d9fd0c7aff371bd0"
     },
     "storage_tests": {
-      "status": "passed",
-      "count": 3,
-      "platform": "macos_arm64"
+      "status": "pending_current_changes"
     },
     "latest_failed_build": {
       "run_url": "https://github.com/damage/faithgram/actions/runs/37641151568",
@@ -202,10 +200,6 @@
       }
     },
     "build_number": 11,
-    "build_run_url": "https://github.com/damage/faithgram/actions/runs/37643635225",
-    "build_commit": "cc3ad2b0784b11ac7cd4b0361612b6d1a14fa037",
-    "artifact_id": 11494107325,
-    "artifact_zip_sha256": "6f1d806d68ef563bedd800f7ad9e200ad50985ed266ff5e8365e808d4221a12a",
     "ipa_sha256": "7f467f0968e3fd9726f80cef7b5b8feedce3824f4cfaa0624fae6103ee02955f",
     "ipa_bytes": 72604014,
     "syntax_checks": {
@@ -248,30 +242,141 @@
       "app_and_extension_icon": true
     },
     "last_successful_build": {
+      "patch_application": "passed_against_pinned_git_objects",
+      "swift_compilation": "passed_xcode_26_2",
+      "full_ios_build": "passed_github_actions_run_37643635225",
+      "device_testing": "previous_build_5_launch_only_build_11_and_new_features_untested",
+      "ipa_created": true,
+      "python_syntax": "passed",
+      "network_entry_point_coverage": "2_foreground_and_3_worker_entry_points_patched",
+      "policy_tests": {
+        "status": "passed",
+        "count": 5,
+        "platform": "macos_arm64",
+        "api_source": "pinned_TelegramApi_serializers"
+      },
+      "signing": "unsigned_current_build_previous_build_5_sideloadly_passed",
+      "storage_tests": {
+        "status": "passed",
+        "count": 3,
+        "platform": "macos_arm64"
+      },
+      "latest_failed_build": {
+        "run_url": "https://github.com/damage/faithgram/actions/runs/37641151568",
+        "commit": "92a13f89ea9f20e94cb336957c2730d0c8d626d2",
+        "policy_tests": 21,
+        "syntax_files": 96,
+        "core_compilation": "passed",
+        "settings_compilation": "passed",
+        "swift_errors": "Peer header used the wrong wrapper type; phone callback needed unwrapped controller access. Both corrected in current patch."
+      },
+      "previous_successful_build": {
+        "patch_application": "passed_against_pinned_git_objects",
+        "swift_compilation": "passed_xcode_26_2",
+        "full_ios_build": "passed_github_actions_run_37505486298",
+        "device_testing": "iphone_launch_passed_user_report_feature_traffic_untested",
+        "ipa_created": true,
+        "python_syntax": "passed",
+        "network_entry_point_coverage": "2_foreground_and_3_worker_entry_points_patched",
+        "policy_tests": {
+          "status": "passed",
+          "count": 5,
+          "platform": "macos_arm64",
+          "api_source": "pinned_TelegramApi_serializers"
+        },
+        "signing": "passed_sideloadly_user_report",
+        "build_run_url": "https://github.com/damage/faithgram/actions/runs/37505486298",
+        "build_commit": "b49f22d9fa360be3559efa9fc16dc722e46c4f72",
+        "artifact_id": 11434410079,
+        "artifact_zip_sha256": "12aecde8ed42adb5179e1f513dab98fdbd79bf32b20d1ceec7dc33f28febf71b",
+        "storage_tests": {
+          "status": "passed",
+          "count": 3,
+          "platform": "macos_arm64",
+          "coverage": [
+            "first_launch_without_app_group_persists_database_key",
+            "existing_app_group_keeps_account_data",
+            "unwritable_storage_throws_before_account_startup"
+          ]
+        }
+      },
       "build_number": 11,
-      "run_url": "https://github.com/damage/faithgram/actions/runs/37643635225",
-      "commit": "cc3ad2b0784b11ac7cd4b0361612b6d1a14fa037",
+      "build_run_url": "https://github.com/damage/faithgram/actions/runs/37643635225",
+      "build_commit": "cc3ad2b0784b11ac7cd4b0361612b6d1a14fa037",
       "artifact_id": 11494107325,
-      "device_tested": false
+      "artifact_zip_sha256": "6f1d806d68ef563bedd800f7ad9e200ad50985ed266ff5e8365e808d4221a12a",
+      "ipa_sha256": "7f467f0968e3fd9726f80cef7b5b8feedce3824f4cfaa0624fae6103ee02955f",
+      "ipa_bytes": 72604014,
+      "syntax_checks": {
+        "status": "passed",
+        "modified_swift_files": 96
+      },
+      "unit_tests": {
+        "status": "passed",
+        "count": 21,
+        "failures": 0,
+        "platform": "macos_arm64",
+        "suites": {
+          "history": 3,
+          "policy": 5,
+          "preferences": 4,
+          "session_backup": 2,
+          "storage": 3,
+          "visual_settings": 4
+        },
+        "api_source": "pinned_TelegramApi_serializers"
+      },
+      "generated_ui_strings": {
+        "status": "passed",
+        "coverage": [
+          "interface_lowercase",
+          "names_urls_placeholders_preserved",
+          "unicode_argument_ranges"
+        ]
+      },
+      "artifact_checks": {
+        "status": "passed",
+        "architecture": "arm64",
+        "bundle_id": "org.personal.faithgram",
+        "app_version": "12.9.2",
+        "build_number": "11",
+        "embedded_provisioning_profiles": 0,
+        "extensions": [
+          "FaithgramActivityExtension"
+        ],
+        "app_and_extension_icon": true
+      },
+      "last_successful_build": {
+        "build_number": 11,
+        "run_url": "https://github.com/damage/faithgram/actions/runs/37643635225",
+        "commit": "cc3ad2b0784b11ac7cd4b0361612b6d1a14fa037",
+        "artifact_id": 11494107325,
+        "device_tested": false
+      }
+    },
+    "badge_service_tests": {
+      "status": "passed",
+      "count": 7,
+      "platform": "windows_python_3_12"
     }
   },
   "features": [
     {
       "section": "Accounts",
       "feature": "Always offline",
-      "status": "implemented_build_passed_device_pending",
+      "status": "implemented_build_pending",
       "option": "alwaysOffline"
     },
     {
       "section": "Accounts",
       "feature": "Don't share phone when adding contacts",
-      "status": "implemented_build_passed_device_pending",
+      "status": "implemented_build_pending",
       "option": "noPhoneException"
     },
     {
       "section": "Accounts",
       "feature": "Unlimited accounts",
-      "status": "implemented_build_passed_device_pending"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Accounts",
@@ -329,7 +434,7 @@
     {
       "section": "Optimizations",
       "feature": "Hide stories",
-      "status": "implemented_build_passed_device_pending"
+      "status": "implemented_build_pending"
     },
     {
       "section": "Optimizations",
@@ -374,20 +479,20 @@
     {
       "section": "Message Settings Subpatches",
       "feature": "Typing activity",
-      "status": "implemented_build_passed_device_pending",
+      "status": "implemented_build_pending",
       "option": "blockTyping"
     },
     {
       "section": "Message Settings Subpatches",
       "feature": "Read receipts",
-      "status": "implemented_build_passed_device_pending",
+      "status": "implemented_build_pending",
       "option": "blockCloudReads",
       "note": "Cloud RPCs and secret-chat read receipts are suppressed; encrypted service transport remains available."
     },
     {
       "section": "Message Settings Subpatches",
       "feature": "Local drafts",
-      "status": "implemented_build_passed_device_pending",
+      "status": "implemented_build_pending",
       "option": "localDrafts"
     },
     {
@@ -515,13 +620,13 @@
     {
       "section": "Disable Ads Subpatches",
       "feature": "Telegram Ads",
-      "status": "implemented_build_passed_device_pending",
+      "status": "implemented_build_pending",
       "option": "hideAds"
     },
     {
       "section": "Disable Ads Subpatches",
       "feature": "Proxy sponsor",
-      "status": "implemented_build_passed_device_pending",
+      "status": "implemented_build_pending",
       "option": "hideProxyPromo"
     },
     {
@@ -539,72 +644,118 @@
         "Telegram/Resources/FaithgramIcon.png",
         "Telegram/Telegram-iOS/FaithgramAppIcon.xcassets/AppIcon.appiconset/icon.png"
       ]
+    },
+    {
+      "path": "assets/FaithgramBadgeService.json",
+      "sha256": "b2d73b26c2fc9d4e9d258b01bc9a147fb44a139d585ac67193a1bed81adb0aca",
+      "destinations": [
+        "Telegram/Resources/FaithgramBadgeService.json"
+      ]
     }
   ],
   "requested_features": [
     {
       "feature": "Lowercase interface",
-      "status": "implemented_build_passed_device_pending"
+      "status": "implemented_build_pending"
     },
     {
       "feature": "Categorized settings above My Profile",
-      "status": "implemented_build_passed_device_pending"
+      "status": "implemented_build_pending"
     },
     {
       "feature": "Black app icon",
-      "status": "implemented_build_passed_device_pending"
+      "status": "implemented_build_pending"
     },
     {
       "feature": "Sessions backup and restore",
-      "status": "implemented_build_passed_device_pending"
+      "status": "implemented_build_pending"
     },
     {
       "feature": "Message history and deleted-message archive",
-      "status": "implemented_build_passed_device_pending"
+      "status": "implemented_build_pending"
     },
     {
       "feature": "Downloaded media archive and per-chat rules",
-      "status": "implemented_build_passed_device_pending"
+      "status": "implemented_build_pending"
     },
     {
       "feature": "Regex message filters",
-      "status": "implemented_build_passed_device_pending"
+      "status": "implemented_build_pending"
     },
     {
       "feature": "Formatting toolbar",
-      "status": "implemented_build_passed_device_pending"
+      "status": "implemented_build_pending"
     },
     {
       "feature": "On-device voice transcription",
-      "status": "implemented_build_passed_device_pending"
+      "status": "implemented_build_pending"
     },
     {
       "feature": "On-device chat and outgoing translation",
-      "status": "implemented_build_passed_device_pending"
+      "status": "implemented_build_pending"
     },
     {
       "feature": "Hide story strip and camera swipe",
-      "status": "implemented_build_passed_device_pending"
+      "status": "implemented_build_pending"
     },
     {
       "feature": "Folder layout and persistence",
-      "status": "implemented_build_passed_device_pending"
+      "status": "implemented_build_pending"
     },
     {
       "feature": "Pinned and mention notification filters",
-      "status": "implemented_build_passed_device_pending"
+      "status": "implemented_build_pending"
     },
     {
       "feature": "Peer-id developer, tester and verified badges",
-      "status": "implemented_build_passed_device_pending"
+      "status": "implemented_build_pending"
     },
     {
       "feature": "Instant passcode lock",
-      "status": "implemented_build_passed_device_pending"
+      "status": "implemented_build_pending"
     },
     {
       "feature": "Faithgram Live Activity",
-      "status": "implemented_build_passed_device_pending"
+      "status": "implemented_build_pending"
+    }
+  ],
+  "badge_registry": {
+    "owner_peer_id": 1000,
+    "roles": [
+      "developer",
+      "betaTester",
+      "paidSubscriber",
+      "verified"
+    ],
+    "public_snapshot": "ed25519_signed",
+    "admin_authentication": "private_access_token_in_device_keychain",
+    "deployment": "pending_server_address",
+    "endpoint_configured": false
+  },
+  "current_fixes": [
+    {
+      "feature": "Aligned category labels",
+      "status": "implemented_build_pending"
+    },
+    {
+      "feature": "Owner-only badge administration",
+      "status": "implemented_build_pending"
+    },
+    {
+      "feature": "Multiple profile badges and explanations",
+      "status": "implemented_build_pending"
+    },
+    {
+      "feature": "Badge issue dates, expiry, notes, profile opening and revocation",
+      "status": "implemented_build_pending"
+    },
+    {
+      "feature": "Faithgram welcome and settings branding",
+      "status": "implemented_build_pending"
+    },
+    {
+      "feature": "Live Activity status, restart and signing diagnostics",
+      "status": "implemented_build_pending"
     }
   ]
 }

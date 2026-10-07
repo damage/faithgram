@@ -1,0 +1,21 @@
+[Unit]
+Description=Faithgram badge registry
+After=network.target
+
+[Service]
+Type=simple
+User=faithgram-badges
+Group=faithgram-badges
+WorkingDirectory=/opt/faithgram-badges
+ExecStart=/opt/faithgram-badges/.venv/bin/python server.py --data /var/lib/faithgram-badges --port 8787
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/faithgram-badges
+
+[Install]
+WantedBy=multi-user.target

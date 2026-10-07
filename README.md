@@ -16,7 +16,7 @@ Faithgram settings sit above My Profile and open a categorized settings screen. 
 - Apple on-device voice transcription and chat translation where the device and language support them.
 - Story-strip and camera-swipe controls; folder placement, All Chats visibility and last-folder restoration.
 - Pinned-message and mention notification filters.
-- Locally assigned developer, beta tester and verified badges, plus a cosmetic premium star.
+- Developer, beta tester, paid subscriber and verified badges, with explanations on tap and support for multiple roles.
 - Instant passcode lock, theme and sticker controls, media quality and notification settings.
 - An optional Faithgram Live Activity with the app icon. iOS controls Dynamic Island visibility and duration.
 
@@ -30,9 +30,19 @@ Gift controls can change regular gift details or display them as unique gifts, i
 
 Message tools include custom fact-check text for channel messages, copying protected content, local expiry control, long-press callback-data inspection, sensitive-content and spoiler controls, 200 recent stickers, direct link opening and blocked-author filters. Monetization switches cover premium purchase UI, gifts, paid reactions, emoji statuses and effects, currencies, boosts and app configuration. Server permissions still apply to read statistics and premium actions.
 
-The optional decoded API log records client requests, responses and errors in an encrypted local rolling store. It is off by default. Badge grants are stored on this installation; the bundled owner badge is assigned to peer id 1000.
+The optional decoded API log records client requests, responses and errors in an encrypted local rolling store. It is off by default.
+
+## Badge registry
+
+Only the active account with peer id 1000 can open the badge administration screen. It supports search, active/revoked/expired views, issue dates, private notes, validity periods, profile opening and revocation. Existing local grants retain an unknown issue date rather than an invented timestamp.
+
+`badge-service/` contains the shared SQLite registry. Clients verify public snapshots with a bundled Ed25519 public key. Admin writes require a private access token stored in device Keychain. Private notes and revoked records are omitted from the public snapshot. The endpoint and public key in `assets/FaithgramBadgeService.json` are currently empty: server deployment and configuration are still pending. Until configured, grants remain local to this installation. The owner has a bundled developer badge.
+
+The registry refreshes in the foreground. A verified cache remains usable for up to seven days offline, so revocation is visible after a client refreshes. See the service README for deployment and credentials.
 
 ## Status
+
+Current changes fix category alignment, add owner-only badge administration and tappable badge explanations, replace welcome-screen branding, and add Live Activity status and restart controls. Their full iPhone build is pending. The badge service passed seven local tests covering authorization, signed snapshots, persistence, multiple roles, expiry and revocation.
 
 [Build 11](https://github.com/damage/faithgram/actions/runs/37643635225) passed the full Xcode 26.2 iPhone build, 21 Swift tests, syntax checks for 96 modified Swift files, and the generated Objective-C lowercase test. The unsigned IPA includes the Faithgram icon and Live Activity extension. The complete workflow took 9 minutes 46 seconds with the dependency cache.
 

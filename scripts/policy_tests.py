@@ -34,7 +34,7 @@ if __name__ == "__main__":
         directory.mkdir(parents=True, exist_ok=True)
     for api_source in (source / "submodules" / "TelegramApi" / "Sources").glob("*.swift"):
         copy_if_changed(api_source, api_target / api_source.name)
-    for name in ["PatchClientPolicy", "PatchClientStorage", "FaithgramPreferences", "FaithgramVault", "FaithgramHistoryStore", "FaithgramSessionBackup", "FaithgramMessageFilter", "FaithgramMediaArchive", "FaithgramVisualPreferences", "FaithgramProtocolLog"]:
+    for name in ["PatchClientPolicy", "PatchClientStorage", "FaithgramPreferences", "FaithgramBadgeService", "FaithgramVault", "FaithgramHistoryStore", "FaithgramSessionBackup", "FaithgramMessageFilter", "FaithgramMediaArchive", "FaithgramVisualPreferences", "FaithgramProtocolLog"]:
         copy_if_changed(source / f"submodules/TelegramCore/Sources/PatchClient/{name}.swift", policy_target / f"{name}.swift")
     copy_if_changed(source / "submodules/TelegramCore/Sources/SyncCore/SyncCore_AccountBackupDataAttribute.swift", policy_target / "AccountBackupData.swift")
     for test_source in (PROJECT / "tests").glob("*Tests.swift"):
