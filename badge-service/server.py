@@ -195,6 +195,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=Path, default=Path('/var/lib/faithgram-badges'))
     parser.add_argument('--init', action='store_true')
+    parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=8787)
     args = parser.parse_args()
     os.umask(0o077)
@@ -203,4 +204,4 @@ if __name__ == '__main__':
         print('Public signing key: ' + store.public_key)
         print('Administrator credential saved locally in admin-token. Keep this file private.')
     else:
-        ThreadingHTTPServer(('127.0.0.1', args.port), handler(store)).serve_forever()
+        ThreadingHTTPServer((args.host, args.port), handler(store)).serve_forever()

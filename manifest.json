@@ -147,7 +147,7 @@
   "validation": {
     "patch_application": "passed_against_pinned_git_objects",
     "swift_compilation": "passed_xcode_26_2",
-    "full_ios_build": "passed_github_actions_run_37676783408",
+    "full_ios_build": "passed_github_actions_run_37686555347",
     "device_testing": "build_5_launch_confirmed; current_changes_untested",
     "ipa_created": true,
     "python_syntax": "passed",
@@ -187,18 +187,13 @@
       "swift_errors": "Peer header used the wrong wrapper type; phone callback needed unwrapped controller access. Both corrected in current patch."
     },
     "previous_successful_build": {
-      "full_ios_build": "passed_github_actions",
-      "build_run_url": "https://github.com/damage/faithgram/actions/runs/37666852909",
-      "build_commit": "dd88236fa72c78c94ad0195fa947fbee50d8a1da",
-      "artifact_id": 11504640908,
-      "artifact_zip_sha256": "d8f2faa94ae2336ff6c68aba4e36a482c8c7788b93195264dfe80ffb116b769a",
-      "swift_syntax_files": 98,
-      "tests": 27,
-      "test_failures": 0,
-      "device_testing": "pending",
-      "local_ipa_inspection": "not_downloaded"
+      "build_number": 15,
+      "run_url": "https://github.com/damage/faithgram/actions/runs/37676783408",
+      "commit": "1849741c846ddbeb6a588f2c370f243bd8ed5be1",
+      "artifact_id": 11508815181,
+      "device_tested": false
     },
-    "build_number": 15,
+    "build_number": 16,
     "syntax_checks": {
       "status": "passed",
       "modified_swift_files": 110
@@ -230,10 +225,10 @@
       ]
     },
     "last_successful_build": {
-      "build_number": 15,
-      "run_url": "https://github.com/damage/faithgram/actions/runs/37676783408",
-      "commit": "1849741c846ddbeb6a588f2c370f243bd8ed5be1",
-      "artifact_id": 11508815181,
+      "build_number": 16,
+      "run_url": "https://github.com/damage/faithgram/actions/runs/37686555347",
+      "commit": "e7c92085bfede707d249a67387874d6735ed1124",
+      "artifact_id": 11511023019,
       "device_tested": false
     },
     "badge_service_tests": {
@@ -241,16 +236,17 @@
       "count": 7,
       "platform": "windows_python_3_12"
     },
-    "build_run_url": "https://github.com/damage/faithgram/actions/runs/37676783408",
-    "build_commit": "1849741c846ddbeb6a588f2c370f243bd8ed5be1",
-    "artifact_id": 11508815181,
-    "artifact_zip_sha256": "f79066807a320152c1e076f7ddff3ca989ffdc28af183a6d54051f7ee38eb1d7",
-    "local_ipa_inspection": "not_downloaded",
     "ipa_checks_in_ci": {
       "status": "passed",
       "exactly_one_extension": "FaithgramActivityExtension",
-      "embedded_provisioning_profiles": 0
-    }
+      "embedded_provisioning_profiles": 0,
+      "badge_service_configuration": "matches_reviewed_asset"
+    },
+    "build_run_url": "https://github.com/damage/faithgram/actions/runs/37686555347",
+    "build_commit": "e7c92085bfede707d249a67387874d6735ed1124",
+    "artifact_id": 11511023019,
+    "artifact_zip_sha256": "cb6642b0005a7cff3b6a150b6dfc63dc8cbcd6aa7e2c0bcb1b65c64f4f357581",
+    "local_ipa_inspection": "not_downloaded"
   },
   "features": [
     {
@@ -539,7 +535,7 @@
     },
     {
       "path": "assets/FaithgramBadgeService.json",
-      "sha256": "b2d73b26c2fc9d4e9d258b01bc9a147fb44a139d585ac67193a1bed81adb0aca",
+      "sha256": "ea8e0022898189ce458d904595765ab5ac85fddb52ab6cf6261bb2eca2ae2c02",
       "destinations": [
         "Telegram/Resources/FaithgramBadgeService.json"
       ]
@@ -621,8 +617,49 @@
     ],
     "public_snapshot": "ed25519_signed",
     "admin_authentication": "private_access_token_in_device_keychain",
-    "deployment": "pending_server_address",
-    "endpoint_configured": false
+    "deployment": "live",
+    "endpoint_configured": true,
+    "endpoint": "https://badges.faithgram.xyz",
+    "server": "<server-ip>",
+    "server_tests": {
+      "count": 7,
+      "failures": 0,
+      "platform": "linux_docker_python_3_12"
+    },
+    "local_registry_checks": {
+      "status": "passed",
+      "signature": "valid",
+      "owner_developer": true,
+      "admin_without_key": "denied",
+      "admin_with_key": "passed",
+      "reverse_proxy_health": "passed"
+    },
+    "dns": "active",
+    "https": "valid_lets_encrypt",
+    "public_registry_checks": {
+      "status": "passed",
+      "endpoint": "https://badges.faithgram.xyz",
+      "tls": "TLSv1.3",
+      "certificate_expires": "Jan  5 20:13:59 2027 GMT",
+      "signature": "valid",
+      "owner_developer": true,
+      "admin_without_key": "denied",
+      "admin_wrong_actor": "denied",
+      "admin_with_key": "passed",
+      "private_notes_excluded": true,
+      "response_cache": "no-store",
+      "public_revision": 1,
+      "public_grants": 1
+    },
+    "certificate_renewal": {
+      "method": "pinned_official_certbot_container",
+      "timer": "faithgram-certbot.timer",
+      "timer_status": "active",
+      "dry_run": "passed",
+      "nginx_reload": "only_when_certificate_changes"
+    },
+    "server_port_binding": "127.0.0.1:8787",
+    "credentials_in_app": false
   },
   "current_fixes": [
     {

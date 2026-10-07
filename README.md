@@ -36,7 +36,7 @@ The optional decoded API log records client requests, responses and errors in an
 
 Only the active account with peer id 1000 can open the badge administration screen. It supports search, active/revoked/expired views, issue dates, private notes, validity periods, profile opening and revocation. Existing local grants retain an unknown issue date rather than an invented timestamp.
 
-`badge-service/` contains the shared SQLite registry. Clients verify public snapshots with a bundled Ed25519 public key. Admin writes require a private access token stored in device Keychain. Private notes and revoked records are omitted from the public snapshot. The endpoint and public key in `assets/FaithgramBadgeService.json` are currently empty: server deployment and configuration are still pending. Until configured, grants remain local to this installation. The owner has a bundled developer badge.
+`badge-service/` contains the shared SQLite registry deployed at https://badges.faithgram.xyz. Clients verify public snapshots with the Ed25519 public key pinned in `assets/FaithgramBadgeService.json`. Admin writes require a private access token stored in device Keychain. Private notes and revoked records are omitted from the public snapshot. The owner has a developer badge in the shared registry. Existing local grants are not automatically uploaded; new grants use the shared service after the owner enters the administrator key.
 
 The registry refreshes in the foreground. A verified cache remains usable for up to seven days offline, so revocation is visible after a client refreshes. See the service README for deployment and credentials.
 
@@ -56,9 +56,9 @@ Settings exports use a separate `faithgram.settings` envelope, AES-GCM and PBKDF
 
 ## Status
 
-[Build 15](https://github.com/damage/faithgram/actions/runs/37676783408) passed the full Xcode 26.2 iPhone build, 38 Swift tests, syntax checks for 110 modified Swift files and the generated Objective-C lowercase test. It includes the badge and branding fixes, Live Activity diagnostics, privacy profiles, chat-specific Ghost rules, outgoing link cleanup, app-preview cover, gestures and encrypted settings backup.
+[Build 16](https://github.com/damage/faithgram/actions/runs/37686555347) passed the full Xcode 26.2 iPhone build, 38 Swift tests, syntax checks for 110 modified Swift files and the generated Objective-C lowercase test. It includes the badge and branding fixes, Live Activity diagnostics, privacy profiles, chat-specific Ghost rules, outgoing link cleanup, app-preview cover, gestures and encrypted settings backup.
 
-The unsigned IPA contains the Faithgram Live Activity extension. Current UI and network behavior still require device testing. The owner previously confirmed Sideloadly installation and app launch on iOS 26.6.1 for build 5; that does not validate later changes. Global badge synchronization is waiting for a server address and deployment configuration. The badge service passed seven local tests.
+The unsigned IPA contains the Faithgram Live Activity extension. Current UI and network behavior still require device testing. The owner previously confirmed Sideloadly installation and app launch on iOS 26.6.1 for build 5; that does not validate later changes. The shared badge registry is available at https://badges.faithgram.xyz. Its HTTPS endpoint, signed public list and administrator access were verified; the app includes the pinned public verification key.
 
 ## Build
 

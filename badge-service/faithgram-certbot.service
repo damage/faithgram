@@ -1,0 +1,9 @@
+[Unit]
+Description=Renew the Faithgram badge API certificate
+After=network-online.target docker.service nginx.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/faithgram-renew-nginx

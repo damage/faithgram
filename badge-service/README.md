@@ -6,7 +6,7 @@ Public responses include badge roles, peer ids and issue/expiry dates. Admin not
 
 ## Setup
 
-Use Python 3.10 or newer and install the pinned dependency in a virtual environment:
+Use Python 3.11 or newer and install the pinned dependency in a virtual environment:
 
 ```sh
 python3 -m venv .venv
@@ -37,9 +37,27 @@ badges.example.com {
 
 Use the real hostname and a valid HTTPS certificate. Keep the application bound to loopback. Do not enable logging of authorization headers in the reverse proxy.
 
+## Docker deployment
+
+The Dockerfile uses Python 3.12 on Debian Bookworm and includes the same registry and tests. Build it with `docker build -t faithgram-badges:2026-10-07 .` and run `python -m unittest -v test_server.py` inside the image before starting it.
+
+Create a dedicated Unix service user and a private data directory owned by that user. Run the container with its numeric uid and gid, a writable mount from `/var/lib/faithgram-badges` to `/data`, and publish port 8787 to `127.0.0.1` only. The container listens on `0.0.0.0` within its own network namespace; the host publishes the API on loopback. Initialization must run with the same uid, gid and data mount as the long-running container.
+
+Use a read-only container filesystem, a small temporary filesystem at `/tmp`, dropped capabilities, `no-new-privileges` and a restart policy. Keep the signing key, administrator token and database outside the image and source directory. The `.dockerignore` allows only the application code and build inputs.
+
+The deployment hostname is `badges.faithgram.xyz`. `nginx-bootstrap.conf` provides the HTTP certificate challenge route and health check. Install it as a separate site in the existing Nginx configuration. After issuing a certificate, replace it with `nginx-https.conf`, validate Nginx and reload it. Leave unrelated site configurations in place.
+
+The Cloudflare DNS record is type `A`, name `badges`, content `<server-ip>`, TTL `Auto`. Use `DNS only` during certificate issuance. When enabling Cloudflare proxying, use `Full (strict)` with a valid origin certificate. Public snapshots and administrator responses must not be cached or placed behind an interactive browser challenge.
+
+Certificate issuance uses the official Certbot container pinned by digest in `faithgram-certbot.sh`. Install that wrapper as `/usr/local/sbin/faithgram-certbot` and `renew-nginx.sh` as `/usr/local/sbin/faithgram-renew-nginx`, both with mode 0755. This keeps Certbot's Python dependencies separate from the host. Certificate, account and challenge directories are persistent mounts; the container does not receive the Docker socket.
+
+After DNS is active, run `sh /opt/faithgram-badges/activate-https.sh`. It checks that the hostname resolves to this server, requests a certificate, validates the new site configuration and restores the previous configuration if validation fails. Install `faithgram-certbot.service` and `faithgram-certbot.timer` in `/etc/systemd/system`, reload systemd and enable the timer. It checks only this certificate twice daily. The host renewal wrapper reloads Nginx when the certificate changes. Directory hooks are disabled inside the container; Nginx stays managed by the host.
+
+Verify renewal with `/usr/local/sbin/faithgram-renew-nginx --dry-run --no-random-sleep-on-renew`. Use this timer as the renewal mechanism for this deployment. Do not disable an existing system certificate timer that serves unrelated sites.
+
 ## App configuration
 
-Set `assets/FaithgramBadgeService.json` to the real HTTPS endpoint and public key, update its checksum in `manifest.json`, then build the app. The empty template disables network synchronization until deployment is configured.
+`assets/FaithgramBadgeService.json` contains the deployment endpoint and its public verification key. Update the asset checksum in `manifest.json` whenever this configuration changes, then build the app. An empty endpoint or public key disables network synchronization.
 
 ```json
 {

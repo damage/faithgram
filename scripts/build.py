@@ -100,6 +100,11 @@ def build(source: Path, build_number: int):
         extensions = [name for name in names if name.endswith(".appex/Info.plist")]
         if extensions != ["Payload/Telegram.app/PlugIns/FaithgramActivityExtension.appex/Info.plist"]:
             raise RuntimeError("The unsigned artifact must include the Faithgram Live Activity extension.")
+        expected_registry = json.loads((PROJECT / "assets/FaithgramBadgeService.json").read_text(encoding="utf-8"))
+        bundled_registry = json.loads(archive.read("Payload/Telegram.app/FaithgramBadgeService.json"))
+        if bundled_registry != expected_registry:
+            raise RuntimeError("The bundled badge registry configuration differs from the reviewed asset.")
+        print("Verified badge registry resource: " + expected_registry["endpoint"])
     destination = artifacts / "Faithgram-unsigned.ipa"
     ipa.replace(destination)
     print(f"Created {destination}. Sign this IPA locally before installing it.")
