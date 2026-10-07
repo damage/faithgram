@@ -806,7 +806,7 @@ index 0000000..2106db3
 +}
 diff --git a/submodules/SettingsUI/Sources/PatchClientSettingsController.swift b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
 new file mode 100644
-index 0000000..7384cc6
+index 0000000..67216d0
 --- /dev/null
 +++ b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
 @@ -0,0 +1,367 @@
@@ -1081,7 +1081,7 @@ index 0000000..7384cc6
 +            (self.navigationController as? NavigationController)?.pushViewController(FaithgramSettingsController(context: self.context, category: category))
 +        case let .visualField(field):
 +            if field.choices.isEmpty {
-+                self.push(FaithgramTextController(context: context, title: FaithgramPreferences.interfaceText(field.title), text: FaithgramVisualPreferences.value(field.key, fallback: field.fallback), save: { text in try FaithgramVisualPreferences.save(field, text: text) }))
++                self.openSettingsPage(FaithgramTextController(context: context, title: FaithgramPreferences.interfaceText(field.title), text: FaithgramVisualPreferences.value(field.key, fallback: field.fallback), save: { text in try FaithgramVisualPreferences.save(field, text: text) }))
 +            } else {
 +                let alert = UIAlertController(title: FaithgramPreferences.interfaceText(field.title), message: nil, preferredStyle: .alert)
 +                for choice in field.choices {
@@ -1093,7 +1093,7 @@ index 0000000..7384cc6
 +        case let .action(action): self.perform(action)
 +        case let .text(title, key, fallback):
 +            if key == "regexRules" || key == "factCheckText" {
-+                self.push(FaithgramTextController(context: context, title: FaithgramPreferences.interfaceText(title), text: FaithgramPreferences.text(key), save: { text in
++                self.openSettingsPage(FaithgramTextController(context: context, title: FaithgramPreferences.interfaceText(title), text: FaithgramPreferences.text(key), save: { text in
 +                    if key == "regexRules" { let _ = try FaithgramMessageFilter.compile(text) }
 +                    FaithgramPreferences.setText(key, text)
 +                }))
@@ -1114,14 +1114,14 @@ index 0000000..7384cc6
 +        default: break
 +        }
 +    }
-+    private func push(_ controller: ViewController) {
++    private func openSettingsPage(_ controller: ViewController) {
 +        (self.navigationController as? NavigationController)?.pushViewController(controller)
 +    }
 +    private func perform(_ action: FaithgramAction) {
 +        switch action {
 +        case .exportSessions: sessionBackup.exportSessions()
 +        case .restoreSessions: sessionBackup.importSessions()
-+        case .history: push(FaithgramHistoryController(context: context))
++        case .history: openSettingsPage(FaithgramHistoryController(context: context))
 +        case .giftCatalog:
 +            actionDisposable.set((context.engine.payments.cachedStarGifts() |> take(1) |> deliverOnMainQueue).start(next: { [weak self] gifts in
 +                guard let self else { return }
@@ -1131,14 +1131,14 @@ index 0000000..7384cc6
 +                    case let .unique(gift): return "\(gift.title) #\(gift.number)\nid: \(gift.id)\nslug: \(gift.slug)"
 +                    }
 +                }.joined(separator: "\n\n")
-+                self.push(FaithgramTextController(context: self.context, title: FaithgramPreferences.interfaceText("Gift catalog ids"), text: text.isEmpty ? "No cached gifts yet. Open the gift catalog first." : text, save: nil))
++                self.openSettingsPage(FaithgramTextController(context: self.context, title: FaithgramPreferences.interfaceText("Gift catalog ids"), text: text.isEmpty ? "No cached gifts yet. Open the gift catalog first." : text, save: nil))
 +            }))
 +        case .protocolLog:
 +            FaithgramProtocolLog.read { [weak self] result in
 +                guard let self else { return }
 +                let text: String
 +                switch result { case let .success(value): text = value.isEmpty ? "The protocol log is empty." : value; case .failure: text = "The protocol log could not be decrypted." }
-+                self.push(FaithgramTextController(context: self.context, title: FaithgramPreferences.interfaceText("Protocol log"), text: text, save: nil))
++                self.openSettingsPage(FaithgramTextController(context: self.context, title: FaithgramPreferences.interfaceText("Protocol log"), text: text, save: nil))
 +            }
 +        case .lockNow:
 +            actionDisposable.set((context.sharedContext.accountManager.transaction { $0.getAccessChallengeData() } |> deliverOnMainQueue).start(next: { [weak self] challenge in
@@ -1147,16 +1147,16 @@ index 0000000..7384cc6
 +                else { self.context.sharedContext.appLockContext.lock() }
 +            }))
 +        case .passcode:
-+            actionDisposable.set((passcodeOptionsAccessController(context: context, pushController: { [weak self] in self?.push($0) }, completion: { [weak self] success in
-+                if success, let self { self.push(passcodeOptionsController(context: self.context)) }
-+            }) |> deliverOnMainQueue).start(next: { [weak self] controller in if let controller { self?.push(controller) } }))
-+        case .theme: push(themeSettingsController(context: context))
-+        case .stickers: push(installedStickerPacksController(context: context, mode: .general))
-+        case .downloads: push(dataAndStorageController(context: context))
-+        case .privateMedia: push(saveIncomingMediaController(context: context, scope: .peerType(.privateChats)))
-+        case .groupMedia: push(saveIncomingMediaController(context: context, scope: .peerType(.groups)))
-+        case .channelMedia: push(saveIncomingMediaController(context: context, scope: .peerType(.channels)))
-+        case .notifications: push(notificationsAndSoundsController(context: context, exceptionsList: nil))
++            actionDisposable.set((passcodeOptionsAccessController(context: context, pushController: { [weak self] in self?.openSettingsPage($0) }, completion: { [weak self] success in
++                if success, let self { self.openSettingsPage(passcodeOptionsController(context: self.context)) }
++            }) |> deliverOnMainQueue).start(next: { [weak self] controller in if let controller { self?.openSettingsPage(controller) } }))
++        case .theme: openSettingsPage(themeSettingsController(context: context))
++        case .stickers: openSettingsPage(installedStickerPacksController(context: context, mode: .general))
++        case .downloads: openSettingsPage(dataAndStorageController(context: context))
++        case .privateMedia: openSettingsPage(saveIncomingMediaController(context: context, scope: .peerType(.privateChats)))
++        case .groupMedia: openSettingsPage(saveIncomingMediaController(context: context, scope: .peerType(.groups)))
++        case .channelMedia: openSettingsPage(saveIncomingMediaController(context: context, scope: .peerType(.channels)))
++        case .notifications: openSettingsPage(notificationsAndSoundsController(context: context, exceptionsList: nil))
 +        }
 +    }
 +    private func editBadge(peerId: Int64?) {
@@ -1654,10 +1654,10 @@ index 0000000..e06e4eb
 +}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramGiftPresentation.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramGiftPresentation.swift
 new file mode 100644
-index 0000000..419ed31
+index 0000000..69324c7
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramGiftPresentation.swift
-@@ -0,0 +1,166 @@
+@@ -0,0 +1,167 @@
 +import Foundation
 +import Postbox
 +import SwiftSignalKit
@@ -1820,7 +1820,8 @@ index 0000000..419ed31
 +    }
 +
 +    static func valueInfo(slug: String) -> StarGift.UniqueGift.ValueInfo? {
-+        guard PatchClientPolicy.isEnabled(.spoofUniqueGifts), slug == text("uniqueSlug", "Faithgram-\(small(\"uniqueNumber\", 1))") else { return nil }
++        let fallbackSlug = "Faithgram-" + String(small("uniqueNumber", 1))
++        guard PatchClientPolicy.isEnabled(.spoofUniqueGifts), slug == text("uniqueSlug", fallbackSlug) else { return nil }
 +        return StarGift.UniqueGift.ValueInfo(isLastSaleOnFragment: false, valueIsAverage: false, value: number("uniqueValueAmount", number("uniqueValue", 0)), currency: text("uniqueValueCurrency", "USD"), initialSaleDate: small("giftDate", 0), initialSaleStars: number("giftPrice", 0), initialSalePrice: number("giftPrice", 0), lastSaleDate: nil, lastSalePrice: FaithgramVisualPreferences.int("uniqueLastResale"), floorPrice: FaithgramVisualPreferences.int("uniqueFloorPrice"), averagePrice: FaithgramVisualPreferences.int("uniqueAveragePrice"), listedCount: nil, fragmentListedCount: nil, fragmentListedUrl: nil)
 +    }
 +}
@@ -4426,7 +4427,7 @@ index 44aff19..fbc6341 100644
 +    return result
 +}
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
-index fdfd1ce..8c03445 100644
+index fdfd1ce..859fe90 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
 +++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
 @@ -137,6 +137,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
@@ -4475,12 +4476,17 @@ index fdfd1ce..8c03445 100644
                  verifiedIcon = .emojiStatus(PeerEmojiStatus(content: .emoji(fileId: verificationIconFileId), expirationDate: nil))
              }
          }
-@@ -1133,6 +1144,33 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -1133,6 +1144,38 @@ final class PeerInfoHeaderNode: ASDisplayNode {
              self.titleExpandedVerifiedIconSize = expandedIconSize
          }
          
 +        do {
-+            let badge = (peer as? TelegramUser).flatMap { FaithgramPreferences.badge(for: $0.id.id._internalGetInt64Value()) }
++            let badge: FaithgramPreferences.Badge?
++            if case let .user(user)? = peer {
++                badge = FaithgramPreferences.badge(for: user.id.id._internalGetInt64Value())
++            } else {
++                badge = nil
++            }
 +            let content: EmojiStatusComponent.Content
 +            if let fileId = badge?.fileId {
 +                content = .animation(content: .customEmoji(fileId: fileId), size: CGSize(width: 80, height: 80), placeholderColor: presentationData.theme.list.mediaPlaceholderColor, themeColor: navigationContentsAccentColor, loopMode: .forever)
@@ -4509,7 +4515,7 @@ index fdfd1ce..8c03445 100644
          var actualNavigationContentsColor = navigationContentsAccentColor
          actualNavigationContentsColor = presentationData.theme.chat.inputPanel.panelControlColor
          
-@@ -1579,6 +1617,15 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -1579,6 +1622,15 @@ final class PeerInfoHeaderNode: ASDisplayNode {
              nextExpandedIconX += 4.0 + titleExpandedCredibilityIconSize.width
          }
                  
@@ -4525,7 +4531,7 @@ index fdfd1ce..8c03445 100644
          if let verifiedIconSize = self.verifiedIconSize, let titleExpandedVerifiedIconSize = self.titleExpandedVerifiedIconSize, verifiedIconSize.width > 0.0 {
              let leftOffset: CGFloat
              let leftExpandedOffset: CGFloat
-@@ -2035,6 +2082,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -2035,6 +2087,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
              self.currentPendingStarRating = nil
          }
          
@@ -4654,7 +4660,7 @@ index fd01930..498bd29 100644
              return
          }
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenOpenPhone.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenOpenPhone.swift
-index c278956..581a531 100644
+index c278956..c8d08eb 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenOpenPhone.swift
 +++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenOpenPhone.swift
 @@ -16,7 +16,7 @@ extension PeerInfoScreenNode {
@@ -4671,7 +4677,7 @@ index c278956..581a531 100644
                      })))
                  }
 -                if !formattedPhoneNumber.hasPrefix("+888") {
-+                if !(formattedPhoneNumber.hasPrefix("+888") || (self.peerId == self.context.account.peerId && PatchClientPolicy.isEnabled(.customProfile) && FaithgramVisualPreferences.bool("fragmentPhone"))) {
++                if !(formattedPhoneNumber.hasPrefix("+888") || (strongSelf.peerId == strongSelf.context.account.peerId && PatchClientPolicy.isEnabled(.customProfile) && FaithgramVisualPreferences.bool("fragmentPhone"))) {
                      if !strongSelf.isMyProfile {
                          items.append(.action(ContextMenuActionItem(text: presentationData.strings.UserInfo_PhoneCall, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/PhoneCall"), color: theme.contextMenu.primaryColor) }, action: { c, _ in
                              c?.dismiss {
@@ -4680,7 +4686,7 @@ index c278956..581a531 100644
                  })))
              } else {
 -                if !formattedPhoneNumber.hasPrefix("+888") {
-+                if !(formattedPhoneNumber.hasPrefix("+888") || (self.peerId == self.context.account.peerId && PatchClientPolicy.isEnabled(.customProfile) && FaithgramVisualPreferences.bool("fragmentPhone"))) {
++                if !(formattedPhoneNumber.hasPrefix("+888") || (strongSelf.peerId == strongSelf.context.account.peerId && PatchClientPolicy.isEnabled(.customProfile) && FaithgramVisualPreferences.bool("fragmentPhone"))) {
                      if !strongSelf.isMyProfile {
                          items.append(
                              .action(ContextMenuActionItem(text: presentationData.strings.UserInfo_PhoneCall, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/PhoneCall"), color: theme.contextMenu.primaryColor) }, action: { c, _ in

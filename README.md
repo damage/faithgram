@@ -34,7 +34,9 @@ The optional decoded API log records client requests, responses and errors in an
 
 ## Status
 
-The new feature set is awaiting compilation and device testing. The previous [build 5](https://github.com/damage/faithgram/actions/runs/37505486298) passed eight Swift tests and the full Xcode 26.2 build. The owner confirmed installation with Sideloadly and app launch on iOS 26.6.1. That result covers the previous build only.
+[Build 11](https://github.com/damage/faithgram/actions/runs/37643635225) passed the full Xcode 26.2 iPhone build, 21 Swift tests, syntax checks for 96 modified Swift files, and the generated Objective-C lowercase test. The unsigned IPA includes the Faithgram icon and Live Activity extension. The complete workflow took 9 minutes 46 seconds with the dependency cache.
+
+Build 11 has not been tested on an iPhone. The owner previously confirmed installation with Sideloadly and app launch on iOS 26.6.1 for build 5; that startup result does not validate the new functions. Runtime checks are still needed for ghost mode traffic, archives, translation, badges and UI layout.
 
 ## Build
 

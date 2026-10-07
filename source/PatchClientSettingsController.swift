@@ -1,76 +1,367 @@
 import Foundation
+import UIKit
+import AsyncDisplayKit
 import Display
 import SwiftSignalKit
 import TelegramCore
+import TelegramApi
 import TelegramPresentationData
-import ItemListUI
 import AccountContext
 
-private final class PatchClientSettingsArguments {
-    let update: (PatchClientOption, Bool) -> Void
-
-    init(update: @escaping (PatchClientOption, Bool) -> Void) {
-        self.update = update
+private enum FaithgramCategory: String, CaseIterable {
+    case accounts, messages, privacy, appearance, media, chats, notifications, badges, profile, balances, gifts, uniqueGifts, extraGifts, optimizations, diagnostics
+    var title: String {
+        switch self { case .uniqueGifts: return "Unique gifts"; case .extraGifts: return "Extra gifts"; default: return self.rawValue.capitalized }
+    }
+    var symbol: String {
+        switch self {
+        case .accounts: return "person.crop.circle"
+        case .messages: return "bubble.left.and.bubble.right"
+        case .privacy: return "lock.shield"
+        case .appearance: return "paintbrush"
+        case .media: return "waveform"
+        case .chats: return "folder"
+        case .notifications: return "bell.badge"
+        case .badges: return "checkmark.seal"
+        case .profile: return "person.text.rectangle"
+        case .balances: return "star.circle"
+        case .gifts, .uniqueGifts, .extraGifts: return "gift"
+        case .optimizations: return "slider.horizontal.3"
+        case .diagnostics: return "doc.text.magnifyingglass"
+        }
+    }
+    var options: [PatchClientOption] {
+        switch self {
+        case .accounts: return [.unlimitedAccounts, .noPhoneException, .hideSelfPhone]
+        case .messages: return [.saveDeletedMessages, .saveEditHistory, .regexFilters, .formattingPanel, .customFactCheck, .copyProtectedContent, .disableTTL, .showCallbackData, .disableSensitiveBlur, .moreRecentStickers, .openLinksWithoutWarning, .disableMediaSpoilers, .hideBlockedMessages]
+        case .privacy: return [.alwaysOffline, .blockTyping, .blockCloudReads, .localDrafts, .hideAds, .hideProxyPromo]
+        case .appearance: return [.lowercaseInterface, .localPremium, .hideStories, .disableStoryCamera, .dynamicIsland]
+        case .media: return [.localTranscription, .localTranslation, .archiveDownloadedMedia]
+        case .chats: return [.hideAllChats, .foldersAtBottom, .rememberFolder]
+        case .notifications: return [.hidePinnedNotifications, .hideMentionNotifications]
+        case .badges: return []
+        case .profile: return [.customProfile]
+        case .balances: return [.customBalances]
+        case .gifts: return [.spoofGifts]
+        case .uniqueGifts: return [.spoofUniqueGifts, .fakeGiftTransfer]
+        case .extraGifts: return [.showHiddenGifts]
+        case .optimizations: return [.disableMonetizationConfig, .hidePremiumUI, .hideGifts, .disablePaidReactions, .hideEmojiStatus, .hideCurrencies, .hideBoosts, .disablePremiumEffects]
+        case .diagnostics: return [.protocolLogger]
+        }
     }
 }
 
-private struct PatchClientSettingsEntry: ItemListNodeEntry {
-    let stableId: Int32
-    let section: ItemListSectionId
-    let theme: PresentationTheme
-    let option: PatchClientOption?
-    let text: String
-    let value: Bool
+private enum FaithgramRow {
+    case category(FaithgramCategory)
+    case visualField(FaithgramVisualPreferences.Field)
+    case toggle(PatchClientOption)
+    case ghost
+    case text(title: String, key: String, fallback: String)
+    case badge(peerId: Int64, role: FaithgramPreferences.Badge)
+    case addBadge
+    case action(FaithgramAction)
+}
 
-    static func ==(lhs: PatchClientSettingsEntry, rhs: PatchClientSettingsEntry) -> Bool {
-        return lhs.stableId == rhs.stableId && lhs.section == rhs.section
-            && lhs.theme === rhs.theme && lhs.option == rhs.option
-            && lhs.text == rhs.text && lhs.value == rhs.value
+private enum FaithgramAction: String {
+    case exportSessions = "Export sessions backup"
+    case restoreSessions = "Restore sessions backup"
+    case history = "Message history"
+    case protocolLog = "View protocol log"
+    case giftCatalog = "Gift catalog ids"
+    case lockNow = "Lock now"
+    case passcode = "Passcode and Face ID"
+    case theme = "Theme, text size and chat appearance"
+    case stickers = "Stickers and emoji"
+    case downloads = "Downloads and media quality"
+    case privateMedia = "Save media from private chats"
+    case groupMedia = "Save media from groups"
+    case channelMedia = "Save media from channels"
+    case notifications = "Sounds and notification settings"
+}
+
+private final class FaithgramToggle: UISwitch {
+    var changed: ((Bool) -> Void)?
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        self.addTarget(self, action: #selector(valueUpdated), for: .valueChanged)
     }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    @objc private func valueUpdated() { self.changed?(self.isOn) }
+}
 
-    static func <(lhs: PatchClientSettingsEntry, rhs: PatchClientSettingsEntry) -> Bool {
-        return lhs.stableId < rhs.stableId
+private final class FaithgramSettingsController: ViewController, UITableViewDataSource, UITableViewDelegate {
+    private let context: AccountContext
+    private let category: FaithgramCategory?
+    private let table = UITableView(frame: .zero, style: .insetGrouped)
+    private var rows: [FaithgramRow] = []
+    private var observer: NSObjectProtocol?
+    private let actionDisposable = MetaDisposable()
+    private lazy var sessionBackup = FaithgramSessionBackupController(context: self.context)
+
+    init(context: AccountContext, category: FaithgramCategory? = nil) {
+        self.context = context
+        self.category = category
+        let data = context.sharedContext.currentPresentationData.with { $0 }
+        super.init(navigationBarPresentationData: NavigationBarPresentationData(presentationData: data, style: .glass))
+        self.title = category.map { FaithgramPreferences.interfaceText($0.title) } ?? "faithgram"
+        self.navigationItem.backBarButtonItem = UIBarButtonItem(title: FaithgramPreferences.interfaceText("Back"), style: .plain, target: nil, action: nil)
+        self.statusBar.statusBarStyle = .White
+        self.observer = NotificationCenter.default.addObserver(forName: FaithgramPreferences.changed, object: nil, queue: .main) { [weak self] _ in self?.reloadRows() }
+        self.reloadRows()
     }
+    required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    deinit { actionDisposable.dispose(); if let observer = self.observer { NotificationCenter.default.removeObserver(observer) } }
 
-    func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
-        if let option = self.option {
-            let arguments = arguments as! PatchClientSettingsArguments
-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass,
-                title: option.title, value: self.value, sectionId: self.section, style: .blocks,
-                updated: { value in arguments.update(option, value) })
+    override func loadDisplayNode() {
+        self.displayNode = ASDisplayNode()
+        self.displayNode.backgroundColor = .black
+        self.displayNodeDidLoad()
+        self.table.backgroundColor = .black
+        self.table.separatorColor = UIColor(white: 0.18, alpha: 1)
+        self.table.rowHeight = UITableView.automaticDimension
+        self.table.estimatedRowHeight = 64
+        self.table.dataSource = self
+        self.table.delegate = self
+        self.table.contentInsetAdjustmentBehavior = .never
+        self.view.addSubview(self.table)
+        self.navigationBar?.updateBackgroundAlpha(0, transition: .immediate)
+    }
+    override func containerLayoutUpdated(_ layout: ContainerViewLayout, transition: ContainedViewLayoutTransition) {
+        super.containerLayoutUpdated(layout, transition: transition)
+        let top = self.navigationLayout(layout: layout).navigationFrame.maxY
+        transition.updateFrame(view: self.table, frame: CGRect(x: 0, y: top, width: layout.size.width, height: layout.size.height - top))
+        self.table.contentInset.bottom = layout.intrinsicInsets.bottom + 16
+        if self.category == nil { self.updateHeader(width: layout.size.width) }
+    }
+    private func updateHeader(width: CGFloat) {
+        let header = UIView(frame: CGRect(x: 0, y: 0, width: width, height: 270))
+        let icon = UIImageView(frame: CGRect(x: (width - 92) / 2, y: 38, width: 92, height: 92))
+        if let path = Bundle.main.path(forResource: "FaithgramIcon", ofType: "png") { icon.image = UIImage(contentsOfFile: path) }
+        else { icon.image = UIImage(systemName: "paperplane.fill"); icon.tintColor = .white }
+        icon.contentMode = .scaleAspectFit
+        icon.isAccessibilityElement = false
+        header.addSubview(icon)
+        let title = UILabel(frame: CGRect(x: 24, y: 153, width: width - 48, height: 42))
+        title.text = "faithgram"
+        title.font = .systemFont(ofSize: 30, weight: .semibold)
+        title.textAlignment = .center
+        title.textColor = .white
+        header.addSubview(title)
+        let version = UILabel(frame: CGRect(x: 24, y: 196, width: width - 48, height: 25))
+        let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+        version.text = "\(appVersion) (\(build))"
+        version.font = .preferredFont(forTextStyle: .subheadline)
+        version.textAlignment = .center
+        version.textColor = .gray
+        header.addSubview(version)
+        self.table.tableHeaderView = header
+    }
+    private func reloadRows() {
+        self.title = self.category.map { FaithgramPreferences.interfaceText($0.title) } ?? "faithgram"
+        if let category = self.category {
+            self.rows = category.options.map(FaithgramRow.toggle)
+            let visualFields: [FaithgramVisualPreferences.Field]
+            switch category {
+            case .profile: visualFields = FaithgramVisualPreferences.profileFields
+            case .balances: visualFields = FaithgramVisualPreferences.balanceFields
+            case .gifts: visualFields = FaithgramVisualPreferences.regularGiftFields
+            case .uniqueGifts: visualFields = FaithgramVisualPreferences.uniqueGiftFields
+            case .extraGifts: visualFields = FaithgramVisualPreferences.hiddenGiftFields
+            default: visualFields = []
+            }
+            self.rows += visualFields.map(FaithgramRow.visualField)
+            if category == .diagnostics { self.rows.append(.action(.protocolLog)) }
+            if category == .extraGifts { self.rows.append(.action(.giftCatalog)) }
+            if category == .privacy {
+                self.rows.insert(.ghost, at: 0)
+                self.rows += [.action(.lockNow), .action(.passcode)]
+            }
+            if category == .accounts { self.rows += [.action(.exportSessions), .action(.restoreSessions)] }
+            if category == .appearance { self.rows += [.action(.theme), .action(.stickers)] }
+            if category == .notifications { self.rows.append(.action(.notifications)) }
+            if category == .messages {
+                self.rows += [.text(title: "Deleted mark", key: "deletedMark", fallback: "🧹"),
+                              .text(title: "Edited mark", key: "editedMark", fallback: "🧹"),
+                              .text(title: "Regex rules", key: "regexRules", fallback: ""), .text(title: "Fact-check text", key: "factCheckText", fallback: ""), .action(.history)]
+            }
+            if category == .media {
+                self.rows.append(.text(title: "Translation language", key: "translationTarget", fallback: Locale.current.identifier.components(separatedBy: CharacterSet(charactersIn: "_-" )).first ?? "en"))
+                self.rows += [.action(.privateMedia), .action(.groupMedia), .action(.channelMedia), .action(.downloads)]
+            }
+            if category == .badges {
+                self.rows = FaithgramPreferences.badgeGrants.sorted { (Int64($0.key) ?? 0) < (Int64($1.key) ?? 0) }.compactMap { key, value in
+                    guard let id = Int64(key) else { return nil }
+                    return .badge(peerId: id, role: value)
+                }
+                if self.context.account.peerId.id._internalGetInt64Value() == FaithgramPreferences.badgeOwnerId { self.rows.append(.addBadge) }
+            }
+        } else { self.rows = FaithgramCategory.allCases.map(FaithgramRow.category) }
+        if self.isNodeLoaded { self.table.reloadData() }
+    }
+    func numberOfSections(in tableView: UITableView) -> Int { return 1 }
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { return self.rows.count }
+    func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { return self.category == nil ? "functions" : nil }
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
+        cell.backgroundColor = UIColor(white: 0.105, alpha: 1)
+        cell.textLabel?.textColor = .white
+        cell.textLabel?.font = .preferredFont(forTextStyle: .body)
+        cell.textLabel?.adjustsFontForContentSizeCategory = true
+        cell.detailTextLabel?.textColor = .gray
+        cell.detailTextLabel?.font = .preferredFont(forTextStyle: .footnote)
+        cell.detailTextLabel?.numberOfLines = 0
+        cell.tintColor = .white
+        switch self.rows[indexPath.row] {
+        case let .category(category):
+            cell.textLabel?.text = FaithgramPreferences.interfaceText(category.title)
+            cell.imageView?.image = UIImage(systemName: category.symbol)
+            cell.accessoryType = .disclosureIndicator
+        case let .visualField(field):
+            cell.textLabel?.text = FaithgramPreferences.interfaceText(field.title)
+            let value = FaithgramVisualPreferences.value(field.key, fallback: field.fallback)
+            cell.detailTextLabel?.text = value.isEmpty ? FaithgramPreferences.interfaceText("Not set") : value
+            cell.accessoryType = .disclosureIndicator
+        case let .toggle(option):
+            cell.textLabel?.text = FaithgramPreferences.interfaceText(option.title)
+            cell.detailTextLabel?.text = FaithgramPreferences.interfaceText(option.explanation)
+            let toggle = FaithgramToggle(frame: .zero)
+            toggle.isOn = PatchClientPolicy.isEnabled(option)
+            toggle.accessibilityLabel = cell.textLabel?.text
+            toggle.changed = { value in PatchClientPolicy.setEnabled(option, value) }
+            cell.accessoryView = toggle
+            cell.selectionStyle = .none
+        case .ghost:
+            cell.textLabel?.text = FaithgramPreferences.interfaceText("Ghost mode")
+            cell.detailTextLabel?.text = FaithgramPreferences.interfaceText("Offline status, no read receipts, no typing or upload indicators.")
+            cell.imageView?.image = UIImage(systemName: "moon.fill")
+            let toggle = FaithgramToggle(frame: .zero)
+            toggle.isOn = FaithgramPreferences.ghostMode
+            toggle.changed = { [weak self] value in
+                FaithgramPreferences.setGhostMode(value)
+                if value, let context = self?.context { let _ = context.account.network.request(Api.functions.account.updateStatus(offline: .boolTrue)).startStandalone() }
+            }
+            cell.accessoryView = toggle
+            cell.selectionStyle = .none
+        case let .text(title, key, fallback):
+            cell.textLabel?.text = FaithgramPreferences.interfaceText(title)
+            let value = FaithgramPreferences.text(key, fallback: fallback)
+            cell.detailTextLabel?.text = value.isEmpty ? FaithgramPreferences.interfaceText("Not set") : value
+            cell.accessoryType = .disclosureIndicator
+        case let .badge(peerId, role):
+            cell.textLabel?.text = "\(peerId)"
+            cell.detailTextLabel?.text = "faithgram · \(role.title)"
+            cell.imageView?.image = UIImage(systemName: role == .betaTester ? "testtube.2" : "checkmark.seal")
+        case let .action(action):
+            cell.textLabel?.text = FaithgramPreferences.interfaceText(action.rawValue)
+            cell.accessoryType = .disclosureIndicator
+            if action == .exportSessions || action == .restoreSessions { cell.detailTextLabel?.text = FaithgramPreferences.interfaceText("Password-protected backup of active sessions") }
+        case .addBadge:
+            cell.textLabel?.text = FaithgramPreferences.interfaceText("Assign badge")
+            cell.imageView?.image = UIImage(systemName: "plus.circle")
         }
-        return ItemListTextItem(presentationData: presentationData, text: .plain(self.text), sectionId: self.section)
+        return cell
+    }
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        switch self.rows[indexPath.row] {
+        case let .category(category):
+            (self.navigationController as? NavigationController)?.pushViewController(FaithgramSettingsController(context: self.context, category: category))
+        case let .visualField(field):
+            if field.choices.isEmpty {
+                self.openSettingsPage(FaithgramTextController(context: context, title: FaithgramPreferences.interfaceText(field.title), text: FaithgramVisualPreferences.value(field.key, fallback: field.fallback), save: { text in try FaithgramVisualPreferences.save(field, text: text) }))
+            } else {
+                let alert = UIAlertController(title: FaithgramPreferences.interfaceText(field.title), message: nil, preferredStyle: .alert)
+                for choice in field.choices {
+                    alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText(choice), style: .default, handler: { _ in try? FaithgramVisualPreferences.save(field, text: choice) }))
+                }
+                alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
+                context.sharedContext.mainWindow?.presentNative(alert)
+            }
+        case let .action(action): self.perform(action)
+        case let .text(title, key, fallback):
+            if key == "regexRules" || key == "factCheckText" {
+                self.openSettingsPage(FaithgramTextController(context: context, title: FaithgramPreferences.interfaceText(title), text: FaithgramPreferences.text(key), save: { text in
+                    if key == "regexRules" { let _ = try FaithgramMessageFilter.compile(text) }
+                    FaithgramPreferences.setText(key, text)
+                }))
+                return
+            }
+            let alert = UIAlertController(title: FaithgramPreferences.interfaceText(title), message: key == "translationTarget" ? FaithgramPreferences.interfaceText("Language code, for example en, ru, de or es. iOS may ask to download a language model.") : nil, preferredStyle: .alert)
+            alert.addTextField { field in
+                field.text = FaithgramPreferences.text(key, fallback: fallback)
+                field.autocapitalizationType = .none
+                field.autocorrectionType = .no
+            }
+            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
+            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Save"), style: .default, handler: { _ in FaithgramPreferences.setText(key, alert.textFields?.first?.text ?? "") }))
+            self.context.sharedContext.mainWindow?.presentNative(alert)
+        case .addBadge: self.editBadge(peerId: nil)
+        case let .badge(peerId, _):
+            if self.context.account.peerId.id._internalGetInt64Value() == FaithgramPreferences.badgeOwnerId { self.editBadge(peerId: peerId) }
+        default: break
+        }
+    }
+    private func openSettingsPage(_ controller: ViewController) {
+        (self.navigationController as? NavigationController)?.pushViewController(controller)
+    }
+    private func perform(_ action: FaithgramAction) {
+        switch action {
+        case .exportSessions: sessionBackup.exportSessions()
+        case .restoreSessions: sessionBackup.importSessions()
+        case .history: openSettingsPage(FaithgramHistoryController(context: context))
+        case .giftCatalog:
+            actionDisposable.set((context.engine.payments.cachedStarGifts() |> take(1) |> deliverOnMainQueue).start(next: { [weak self] gifts in
+                guard let self else { return }
+                let text = (gifts ?? []).map { gift -> String in
+                    switch gift {
+                    case let .generic(gift): return "\(gift.title ?? "Gift")\nid: \(gift.id)\ncustom emoji: \(gift.file.fileId.id)"
+                    case let .unique(gift): return "\(gift.title) #\(gift.number)\nid: \(gift.id)\nslug: \(gift.slug)"
+                    }
+                }.joined(separator: "\n\n")
+                self.openSettingsPage(FaithgramTextController(context: self.context, title: FaithgramPreferences.interfaceText("Gift catalog ids"), text: text.isEmpty ? "No cached gifts yet. Open the gift catalog first." : text, save: nil))
+            }))
+        case .protocolLog:
+            FaithgramProtocolLog.read { [weak self] result in
+                guard let self else { return }
+                let text: String
+                switch result { case let .success(value): text = value.isEmpty ? "The protocol log is empty." : value; case .failure: text = "The protocol log could not be decrypted." }
+                self.openSettingsPage(FaithgramTextController(context: self.context, title: FaithgramPreferences.interfaceText("Protocol log"), text: text, save: nil))
+            }
+        case .lockNow:
+            actionDisposable.set((context.sharedContext.accountManager.transaction { $0.getAccessChallengeData() } |> deliverOnMainQueue).start(next: { [weak self] challenge in
+                guard let self else { return }
+                if case .none = challenge { self.perform(.passcode) }
+                else { self.context.sharedContext.appLockContext.lock() }
+            }))
+        case .passcode:
+            actionDisposable.set((passcodeOptionsAccessController(context: context, pushController: { [weak self] in self?.openSettingsPage($0) }, completion: { [weak self] success in
+                if success, let self { self.openSettingsPage(passcodeOptionsController(context: self.context)) }
+            }) |> deliverOnMainQueue).start(next: { [weak self] controller in if let controller { self?.openSettingsPage(controller) } }))
+        case .theme: openSettingsPage(themeSettingsController(context: context))
+        case .stickers: openSettingsPage(installedStickerPacksController(context: context, mode: .general))
+        case .downloads: openSettingsPage(dataAndStorageController(context: context))
+        case .privateMedia: openSettingsPage(saveIncomingMediaController(context: context, scope: .peerType(.privateChats)))
+        case .groupMedia: openSettingsPage(saveIncomingMediaController(context: context, scope: .peerType(.groups)))
+        case .channelMedia: openSettingsPage(saveIncomingMediaController(context: context, scope: .peerType(.channels)))
+        case .notifications: openSettingsPage(notificationsAndSoundsController(context: context, exceptionsList: nil))
+        }
+    }
+    private func editBadge(peerId: Int64?) {
+        let alert = UIAlertController(title: "faithgram badge", message: FaithgramPreferences.interfaceText("Enter a user peer id. Badges are stored on this installation."), preferredStyle: .alert)
+        alert.addTextField { field in field.keyboardType = .numberPad; field.text = peerId.map(String.init) }
+        for role in FaithgramPreferences.Badge.allCases {
+            alert.addAction(UIAlertAction(title: role.title, style: .default, handler: { _ in
+                guard let value = alert.textFields?.first?.text, let id = Int64(value), id > 0 else { return }
+                FaithgramPreferences.setBadge(role, peerId: id)
+            }))
+        }
+        if let peerId = peerId { alert.addAction(UIAlertAction(title: "remove badge", style: .destructive, handler: { _ in FaithgramPreferences.setBadge(nil, peerId: peerId) })) }
+        alert.addAction(UIAlertAction(title: "cancel", style: .cancel))
+        self.context.sharedContext.mainWindow?.presentNative(alert)
     }
 }
 
 public func patchClientSettingsController(context: AccountContext) -> ViewController {
-    let revision = ValuePromise<Int>(0, ignoreRepeated: false)
-    let arguments = PatchClientSettingsArguments(update: { option, value in
-        PatchClientPolicy.setEnabled(option, value)
-        revision.set(0)
-    })
-    let signal = combineLatest(context.sharedContext.presentationData, revision.get())
-    |> deliverOnMainQueue
-    |> map { presentationData, _ -> (ItemListControllerState, (ItemListNodeState, Any)) in
-        var entries: [PatchClientSettingsEntry] = []
-        entries.append(PatchClientSettingsEntry(stableId: 0, section: 0, theme: presentationData.theme,
-            option: nil,
-            text: "Settings apply to all accounts on this installation. All options are off by default.",
-            value: false))
-        for (index, option) in PatchClientOption.allCases.enumerated() {
-            let section = Int32(index + 1)
-            let stableId = Int32(index * 2 + 1)
-            entries.append(PatchClientSettingsEntry(stableId: stableId, section: section,
-                theme: presentationData.theme, option: option, text: "", value: PatchClientPolicy.isEnabled(option)))
-            entries.append(PatchClientSettingsEntry(stableId: stableId + 1, section: section,
-                theme: presentationData.theme, option: nil, text: option.explanation, value: false))
-        }
-        let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData),
-            title: .text("Faithgram"), leftNavigationButton: nil, rightNavigationButton: nil,
-            backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
-        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData),
-            entries: entries, style: .blocks, animateChanges: false)
-        return (controllerState, (listState, arguments))
-    }
-    return ItemListController(context: context, state: signal)
+    return FaithgramSettingsController(context: context)
 }

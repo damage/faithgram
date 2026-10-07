@@ -27,8 +27,22 @@ jobs:
           xcodebuild -version
       - name: Fetch upstream and apply changes
         run: python3 scripts/prepare.py
+      - name: Restore compiled test modules
+        id: policy-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: work/policy-tests
+          key: faithgram-tests-v2-xcode26.2-arm64-6ad963e5-${{ hashFiles('tests/Package.swift') }}-${{ hashFiles('tests/*.swift') }}-${{ hashFiles('patches/*.patch') }}
+          restore-keys: |
+            faithgram-tests-v2-xcode26.2-arm64-6ad963e5-${{ hashFiles('tests/Package.swift') }}-
       - name: Compile policy tests with the actual Telegram API
         run: python3 scripts/policy_tests.py
+      - name: Save compiled test modules
+        if: always() && steps.policy-cache.outputs.cache-primary-key != '' && steps.policy-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: work/policy-tests
+          key: ${{ steps.policy-cache.outputs.cache-primary-key }}
       - name: Restore compiled dependencies
         id: bazel-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -43,7 +57,7 @@ jobs:
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
         run: python3 scripts/build.py --build-number "$GITHUB_RUN_NUMBER"
       - name: Save compiled dependencies
-        if: always() && steps.bazel-cache.outputs.cache-hit != 'true'
+        if: always() && steps.bazel-cache.outputs.cache-primary-key != '' && steps.bazel-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: work/bazel-cache
