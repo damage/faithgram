@@ -1,19 +1,5 @@
 {
   "name": "Faithgram iOS",
-  "phase": "features_built_device_testing_pending",
-  "device": {
-    "reported_ios": "26.6.1",
-    "signing_method": "sideloadly",
-    "device_tested": true,
-    "launch_test": {
-      "status": "passed_user_report",
-      "date": "2026-10-07",
-      "scope": "installation_and_app_launch_only",
-      "build_number": 5,
-      "run_url": "https://github.com/damage/faithgram/actions/runs/37505486298"
-    },
-    "new_features_tested": false
-  },
   "upstream": {
     "url": "https://github.com/TelegramMessenger/Telegram-iOS.git",
     "commit": "6ad963e5b62d354da79040f388ae2b9132fb17b8",
@@ -22,7 +8,7 @@
   },
   "patch": {
     "path": "patches/0001-local-policy.patch",
-    "sha256": "d3d1a4497d5328c3a208c40fa4e0a848c2a04ba93b92549127af979b5a0c47d2",
+    "sha256": "af0f3c4dfd7a5922aec0ce8dc24884618b6910c01f810f4fe5936726d89b6acb",
     "files": [
       "Telegram/BUILD",
       "Telegram/FaithgramActivityWidget/FaithgramActivityWidget.swift",
@@ -33,6 +19,7 @@
       "submodules/ChatListUI/Sources/ChatListControllerNode.swift",
       "submodules/ChatListUI/Sources/Node/ChatListItem.swift",
       "submodules/ChatListUI/Sources/Node/ChatListItemStrings.swift",
+      "submodules/ChatPresentationInterfaceState/Sources/ChatPanelInterfaceInteraction.swift",
       "submodules/FaithgramActivity/BUILD",
       "submodules/FaithgramActivity/Sources/FaithgramActivityAttributes.swift",
       "submodules/Media/LocalAudioTranscription/Sources/LocalAudioTranscription.swift",
@@ -42,6 +29,7 @@
       "submodules/SettingsUI/Sources/FaithgramHistoryController.swift",
       "submodules/SettingsUI/Sources/FaithgramSessionBackupController.swift",
       "submodules/SettingsUI/Sources/FaithgramSettingsBackupController.swift",
+      "submodules/SettingsUI/Sources/FaithgramSettingsItems.swift",
       "submodules/SettingsUI/Sources/PatchClientSettingsController.swift",
       "submodules/TelegramCore/Sources/Account/Account.swift",
       "submodules/TelegramCore/Sources/Account/AccountManager.swift",
@@ -53,6 +41,7 @@
       "submodules/TelegramCore/Sources/PatchClient/FaithgramArchivedMedia.swift",
       "submodules/TelegramCore/Sources/PatchClient/FaithgramBadgeService.swift",
       "submodules/TelegramCore/Sources/PatchClient/FaithgramBlockedPeers.swift",
+      "submodules/TelegramCore/Sources/PatchClient/FaithgramChoices.swift",
       "submodules/TelegramCore/Sources/PatchClient/FaithgramGiftPresentation.swift",
       "submodules/TelegramCore/Sources/PatchClient/FaithgramHistoryStore.swift",
       "submodules/TelegramCore/Sources/PatchClient/FaithgramLinkCleaner.swift",
@@ -113,8 +102,10 @@
       "submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift",
       "submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode/Sources/ChatMessageInteractiveMediaNode.swift",
       "submodules/TelegramUI/Components/Chat/ChatMessageItemView/Sources/ChatMessageItemView.swift",
+      "submodules/TelegramUI/Components/Chat/ChatMessageSelectionInputPanelNode/Sources/ChatMessageSelectionInputPanelNode.swift",
       "submodules/TelegramUI/Components/Chat/ChatRichTextEditorComposer/Sources/RichTextEditorChatInputNode.swift",
       "submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift",
+      "submodules/TelegramUI/Components/ChatEntityKeyboardInputNode/Sources/ChatEntityKeyboardInputNode.swift",
       "submodules/TelegramUI/Components/Gifts/GiftViewScreen/Sources/GiftViewScreen.swift",
       "submodules/TelegramUI/Components/GlobalControlPanelsContext/Sources/GlobalControlPanelsContext.swift",
       "submodules/TelegramUI/Components/HeaderPanelContainerComponent/Sources/HeaderPanelContainerComponent.swift",
@@ -132,11 +123,14 @@
       "submodules/TelegramUI/Components/TranslateHeaderPanelComponent/Sources/ChatTranslationPanelNode.swift",
       "submodules/TelegramUI/Sources/AccountContext.swift",
       "submodules/TelegramUI/Sources/AppDelegate.swift",
+      "submodules/TelegramUI/Sources/Chat/ChatControllerLoadDisplayNode.swift",
       "submodules/TelegramUI/Sources/ChatControllerOpenMessageReactionContextMenu.swift",
       "submodules/TelegramUI/Sources/ChatHistoryEntriesForView.swift",
       "submodules/TelegramUI/Sources/ChatHistoryListNode.swift",
       "submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift",
       "submodules/TelegramUI/Sources/FaithgramActivityManager.swift",
+      "submodules/TelegramUI/Sources/FaithgramContextMenu.swift",
+      "submodules/TelegramUI/Sources/FaithgramMessageShot.swift",
       "submodules/TelegramUI/Sources/FaithgramPrivacyUI.swift",
       "submodules/TelegramUI/Sources/SharedAccountContext.swift",
       "submodules/TelegramUI/Sources/TextLinkHandling.swift",
@@ -144,386 +138,6 @@
       "submodules/TranslateUI/Sources/Translate.swift"
     ]
   },
-  "validation": {
-    "patch_application": "passed_against_pinned_git_objects",
-    "swift_compilation": "passed_xcode_26_2",
-    "full_ios_build": "passed_github_actions_run_37686555347",
-    "device_testing": "build_5_launch_confirmed; current_changes_untested",
-    "ipa_created": true,
-    "python_syntax": "passed",
-    "network_entry_point_coverage": "2_foreground_and_3_worker_entry_points_patched",
-    "policy_tests": {
-      "status": "passed",
-      "count": 5,
-      "platform": "macos_arm64",
-      "api_source": "pinned_TelegramApi_serializers"
-    },
-    "signing": "unsigned_current_build_previous_build_5_sideloadly_passed",
-    "previous_build": {
-      "build_run_url": "https://github.com/damage/faithgram/actions/runs/37463608865",
-      "build_commit": "3608e6aaf33f03f8078eb76dc69baff97a1ffb22",
-      "full_ios_build": "passed_github_actions_run_37463608865",
-      "policy_tests": {
-        "status": "passed",
-        "count": 5,
-        "platform": "macos_arm64",
-        "api_source": "pinned_TelegramApi_serializers"
-      },
-      "artifact_id": 11414627410,
-      "artifact_zip_sha256": "121e84934f0a2aa39338ae48bc75ac957518f2a9a0f66d81d9fd0c7aff371bd0"
-    },
-    "storage_tests": {
-      "status": "passed",
-      "count": 3,
-      "platform": "macos_arm64"
-    },
-    "latest_failed_build": {
-      "run_url": "https://github.com/damage/faithgram/actions/runs/37641151568",
-      "commit": "92a13f89ea9f20e94cb336957c2730d0c8d626d2",
-      "policy_tests": 21,
-      "syntax_files": 96,
-      "core_compilation": "passed",
-      "settings_compilation": "passed",
-      "swift_errors": "Peer header used the wrong wrapper type; phone callback needed unwrapped controller access. Both corrected in current patch."
-    },
-    "previous_successful_build": {
-      "build_number": 15,
-      "run_url": "https://github.com/damage/faithgram/actions/runs/37676783408",
-      "commit": "1849741c846ddbeb6a588f2c370f243bd8ed5be1",
-      "artifact_id": 11508815181,
-      "device_tested": false
-    },
-    "build_number": 16,
-    "syntax_checks": {
-      "status": "passed",
-      "modified_swift_files": 110
-    },
-    "unit_tests": {
-      "status": "passed",
-      "count": 38,
-      "failures": 0,
-      "platform": "macos_arm64",
-      "suites": {
-        "badge_signature": 3,
-        "history": 3,
-        "link_cleaner": 3,
-        "policy": 5,
-        "preferences": 7,
-        "privacy": 5,
-        "session_backup": 2,
-        "settings_backup": 3,
-        "storage": 3,
-        "visual_settings": 4
-      }
-    },
-    "generated_ui_strings": {
-      "status": "passed",
-      "coverage": [
-        "interface_lowercase",
-        "names_urls_placeholders_preserved",
-        "unicode_argument_ranges"
-      ]
-    },
-    "last_successful_build": {
-      "build_number": 16,
-      "run_url": "https://github.com/damage/faithgram/actions/runs/37686555347",
-      "commit": "e7c92085bfede707d249a67387874d6735ed1124",
-      "artifact_id": 11511023019,
-      "device_tested": false
-    },
-    "badge_service_tests": {
-      "status": "passed",
-      "count": 7,
-      "platform": "windows_python_3_12"
-    },
-    "ipa_checks_in_ci": {
-      "status": "passed",
-      "exactly_one_extension": "FaithgramActivityExtension",
-      "embedded_provisioning_profiles": 0,
-      "badge_service_configuration": "matches_reviewed_asset"
-    },
-    "build_run_url": "https://github.com/damage/faithgram/actions/runs/37686555347",
-    "build_commit": "e7c92085bfede707d249a67387874d6735ed1124",
-    "artifact_id": 11511023019,
-    "artifact_zip_sha256": "cb6642b0005a7cff3b6a150b6dfc63dc8cbcd6aa7e2c0bcb1b65c64f4f357581",
-    "local_ipa_inspection": "not_downloaded"
-  },
-  "features": [
-    {
-      "section": "Accounts",
-      "feature": "Always offline",
-      "status": "implemented_build_passed_device_pending",
-      "option": "alwaysOffline"
-    },
-    {
-      "section": "Accounts",
-      "feature": "Don't share phone when adding contacts",
-      "status": "implemented_build_passed_device_pending",
-      "option": "noPhoneException"
-    },
-    {
-      "section": "Accounts",
-      "feature": "Unlimited accounts",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Accounts",
-      "feature": "Hide self phone",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Accounts",
-      "feature": "Custom account settings",
-      "status": "implemented_build_passed_device_pending",
-      "note": "Presentation overrides preserve server identity, cached original fields and financial state."
-    },
-    {
-      "section": "Messages",
-      "feature": "Message settings",
-      "status": "implemented_build_passed_device_pending",
-      "note": "Typing and upload activity, cloud and secret read receipts, local drafts, custom fact checks, content protection and local expiry controls."
-    },
-    {
-      "section": "Messages",
-      "feature": "Show bot callback-data on hover",
-      "status": "implemented_build_passed_device_pending",
-      "note": "iOS uses long press on callback buttons to inspect and copy UTF-8 or hex data."
-    },
-    {
-      "section": "Messages",
-      "feature": "Sensitive blur",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Messages",
-      "feature": "More recent stickers",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Messages",
-      "feature": "Open links without warning",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Messages",
-      "feature": "Disable media spoilers",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Optimizations",
-      "feature": "Disable Premium, Stars, TON & Gifts",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Optimizations",
-      "feature": "Disable premium effects",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Optimizations",
-      "feature": "Hide stories",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Optimizations",
-      "feature": "Disable ads",
-      "status": "implemented_build_passed_device_pending",
-      "note": "Both Telegram Ads and Proxy sponsor subpatches implemented in source."
-    },
-    {
-      "section": "Gifts",
-      "feature": "Spoof profile gifts",
-      "status": "implemented_build_passed_device_pending",
-      "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
-    },
-    {
-      "section": "Gifts",
-      "feature": "Spoof profile unique gifts",
-      "status": "implemented_build_passed_device_pending",
-      "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
-    },
-    {
-      "section": "Gifts",
-      "feature": "Fake transfer",
-      "status": "implemented_build_passed_device_pending",
-      "note": "Local service-message preview only; no payment form or transfer RPC; removed on process restart."
-    },
-    {
-      "section": "Gifts",
-      "feature": "Show hidden gifts",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Misc",
-      "feature": "DLL injection",
-      "status": "replaced_by_source_build"
-    },
-    {
-      "section": "Misc",
-      "feature": "MTProto request/response logger",
-      "status": "implemented_build_passed_device_pending",
-      "note": "Decoded Telegram client API requests, responses and errors; encrypted local rolling store; off by default."
-    },
-    {
-      "section": "Message Settings Subpatches",
-      "feature": "Typing activity",
-      "status": "implemented_build_passed_device_pending",
-      "option": "blockTyping"
-    },
-    {
-      "section": "Message Settings Subpatches",
-      "feature": "Read receipts",
-      "status": "implemented_build_passed_device_pending",
-      "option": "blockCloudReads",
-      "note": "Cloud RPCs and secret-chat read receipts are suppressed; encrypted service transport remains available."
-    },
-    {
-      "section": "Message Settings Subpatches",
-      "feature": "Local drafts",
-      "status": "implemented_build_passed_device_pending",
-      "option": "localDrafts"
-    },
-    {
-      "section": "Message Settings Subpatches",
-      "feature": "Custom Fact Check",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Message Settings Subpatches",
-      "feature": "Copy/save protect content",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Message Settings Subpatches",
-      "feature": "Disable TTL",
-      "status": "implemented_build_passed_device_pending",
-      "note": "Local expiry display and cleanup control; raw expiry attributes remain available to exclude disappearing media from archives."
-    },
-    {
-      "section": "Disable Premium, Stars, TON & Gifts Subpatches",
-      "feature": "App config",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Disable Premium, Stars, TON & Gifts Subpatches",
-      "feature": "Premium UI",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Disable Premium, Stars, TON & Gifts Subpatches",
-      "feature": "Gifts",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Disable Premium, Stars, TON & Gifts Subpatches",
-      "feature": "Paid reactions",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Disable Premium, Stars, TON & Gifts Subpatches",
-      "feature": "Emoji statuses and effects",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Disable Premium, Stars, TON & Gifts Subpatches",
-      "feature": "Stars, TON and collectibles",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Disable Premium, Stars, TON & Gifts Subpatches",
-      "feature": "Boosts",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Disable Premium, Stars, TON & Gifts Subpatches",
-      "feature": "Read receipts fix",
-      "status": "implemented_build_passed_device_pending",
-      "note": "Read-stat UI remains available when premium purchase UI is disabled; server permissions still apply."
-    },
-    {
-      "section": "Custom Account Settings Subpatches",
-      "feature": "Custom Stars",
-      "status": "implemented_build_passed_device_pending",
-      "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
-    },
-    {
-      "section": "Custom Account Settings Subpatches",
-      "feature": "Custom TON",
-      "status": "implemented_build_passed_device_pending",
-      "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
-    },
-    {
-      "section": "Custom Account Settings Subpatches",
-      "feature": "Custom level rating",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Custom Account Settings Subpatches",
-      "feature": "Peer-id badges",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Custom Account Settings Subpatches",
-      "feature": "Bot verification",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Custom Account Settings Subpatches",
-      "feature": "Local premium appearance",
-      "status": "implemented_build_passed_device_pending",
-      "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
-    },
-    {
-      "section": "Custom Account Settings Subpatches",
-      "feature": "Account freeze",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Custom Account Settings Subpatches",
-      "feature": "Custom phone number",
-      "status": "implemented_build_passed_device_pending",
-      "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
-    },
-    {
-      "section": "Custom Account Settings Subpatches",
-      "feature": "Custom userID",
-      "status": "implemented_build_passed_device_pending",
-      "note": "Local appearance only; real account identity, entitlement, balance and ownership must stay unchanged."
-    },
-    {
-      "section": "Custom Account Settings Subpatches",
-      "feature": "Local attached channel",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Custom Account Settings Subpatches",
-      "feature": "Fragment phone",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Custom Account Settings Subpatches",
-      "feature": "Custom list usernames",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "section": "Disable Ads Subpatches",
-      "feature": "Telegram Ads",
-      "status": "implemented_build_passed_device_pending",
-      "option": "hideAds"
-    },
-    {
-      "section": "Disable Ads Subpatches",
-      "feature": "Proxy sponsor",
-      "status": "implemented_build_passed_device_pending",
-      "option": "hideProxyPromo"
-    },
-    {
-      "section": "Additional features",
-      "feature": "Hide blocked users' messages",
-      "status": "implemented_build_passed_device_pending",
-      "note": "Account-scoped block list with paged server refresh and live successful block/unblock updates; filters history, previews and in-app notifications."
-    }
-  ],
   "assets": [
     {
       "path": "assets/FaithgramIcon.png",
@@ -539,178 +153,6 @@
       "destinations": [
         "Telegram/Resources/FaithgramBadgeService.json"
       ]
-    }
-  ],
-  "requested_features": [
-    {
-      "feature": "Lowercase interface",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Categorized settings above My Profile",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Black app icon",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Sessions backup and restore",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Message history and deleted-message archive",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Downloaded media archive and per-chat rules",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Regex message filters",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Formatting toolbar",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "On-device voice transcription",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "On-device chat and outgoing translation",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Hide story strip and camera swipe",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Folder layout and persistence",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Pinned and mention notification filters",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Peer-id developer, tester and verified badges",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Instant passcode lock",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Faithgram Live Activity",
-      "status": "implemented_build_passed_device_pending"
-    }
-  ],
-  "badge_registry": {
-    "owner_peer_id": 1000,
-    "roles": [
-      "developer",
-      "betaTester",
-      "paidSubscriber",
-      "verified"
-    ],
-    "public_snapshot": "ed25519_signed",
-    "admin_authentication": "private_access_token_in_device_keychain",
-    "deployment": "live",
-    "endpoint_configured": true,
-    "endpoint": "https://badges.faithgram.xyz",
-    "server": "<server-ip>",
-    "server_tests": {
-      "count": 7,
-      "failures": 0,
-      "platform": "linux_docker_python_3_12"
-    },
-    "local_registry_checks": {
-      "status": "passed",
-      "signature": "valid",
-      "owner_developer": true,
-      "admin_without_key": "denied",
-      "admin_with_key": "passed",
-      "reverse_proxy_health": "passed"
-    },
-    "dns": "active",
-    "https": "valid_lets_encrypt",
-    "public_registry_checks": {
-      "status": "passed",
-      "endpoint": "https://badges.faithgram.xyz",
-      "tls": "TLSv1.3",
-      "certificate_expires": "Jan  5 20:13:59 2027 GMT",
-      "signature": "valid",
-      "owner_developer": true,
-      "admin_without_key": "denied",
-      "admin_wrong_actor": "denied",
-      "admin_with_key": "passed",
-      "private_notes_excluded": true,
-      "response_cache": "no-store",
-      "public_revision": 1,
-      "public_grants": 1
-    },
-    "certificate_renewal": {
-      "method": "pinned_official_certbot_container",
-      "timer": "faithgram-certbot.timer",
-      "timer_status": "active",
-      "dry_run": "passed",
-      "nginx_reload": "only_when_certificate_changes"
-    },
-    "server_port_binding": "127.0.0.1:8787",
-    "credentials_in_app": false
-  },
-  "current_fixes": [
-    {
-      "feature": "Aligned category labels",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Owner-only badge administration",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Multiple profile badges and explanations",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Badge issue dates, expiry, notes, profile opening and revocation",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Faithgram welcome and settings branding",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Live Activity status, restart and signing diagnostics",
-      "status": "implemented_build_passed_device_pending"
-    }
-  ],
-  "selected_features": [
-    {
-      "feature": "Privacy profiles",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Per-chat Ghost rules",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Outgoing tracking-link cleanup",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "App switcher preview cover",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Custom gestures and Home Screen shortcuts",
-      "status": "implemented_build_passed_device_pending"
-    },
-    {
-      "feature": "Encrypted settings export and restore",
-      "status": "implemented_build_passed_device_pending"
     }
   ]
 }

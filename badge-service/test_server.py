@@ -17,7 +17,7 @@ from server import Registry, handler
 class RegistryTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
-        self.registry = Registry(Path(self.directory.name), initialize=True)
+        self.registry = Registry(Path(self.directory.name), initialize=True, owner=1000)
     def tearDown(self):
         self.directory.cleanup()
     def test_owner_and_private_token_are_both_required(self):
@@ -56,7 +56,7 @@ class RegistryTests(unittest.TestCase):
     def test_restart_keeps_identity_records_and_revision(self):
         self.registry.grant({'peerId': 98765, 'role': 'verified'})
         before = json.loads(base64.b64decode(self.registry.snapshot()['payload']))
-        restarted = Registry(Path(self.directory.name), initialize=True)
+        restarted = Registry(Path(self.directory.name), initialize=True, owner=1000)
         self.assertEqual(restarted.public_key, self.registry.public_key)
         after = json.loads(base64.b64decode(restarted.snapshot()['payload']))
         self.assertEqual(before['revision'], after['revision'])

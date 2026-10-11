@@ -106,7 +106,7 @@ final class FaithgramBadgeAdminController: ViewController, UITableViewDataSource
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { authorized ? max(records.count, 1) : 0 }
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { "\(records.count) badges · " + (FaithgramBadgeService.shared.isConfigured ? FaithgramBadgeService.shared.syncStatus : "local registry") }
     func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        return FaithgramBadgeService.shared.isConfigured ? "Only peer id 1000 can manage badges. Updates are synchronized through the signed registry. Private notes stay in the admin API." : "Only peer id 1000 can manage badges. The shared service is not configured. Previous local grants have no recorded issue date."
+        return FaithgramBadgeService.shared.isConfigured ? "Only the owner account can manage badges. Updates are synchronized through the signed registry. Private notes stay in the admin API." : "Only the owner account can manage badges. The shared service is not configured. Previous local grants have no recorded issue date."
     }
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)

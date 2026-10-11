@@ -7,7 +7,8 @@ public struct FaithgramSettingsBackup: Codable {
     public let values: [String: Value]
     private static var textKeys: Set<String> {
         let fields = FaithgramVisualPreferences.profileFields + FaithgramVisualPreferences.balanceFields + FaithgramVisualPreferences.regularGiftFields + FaithgramVisualPreferences.uniqueGiftFields + FaithgramVisualPreferences.hiddenGiftFields
-        return Set(["deletedMark", "editedMark", "regexRules", "factCheckText", "translationTarget", "gesture.up", "gesture.down"].map { "faithgram." + $0 } + fields.map { "faithgram.visual." + $0.key })
+        let plain = ["deletedMark", "editedMark", "regexRules", "factCheckText", "translationTarget", "gesture.up", "gesture.down", "allChatsTitle", "stickerSize"]
+        return Set(plain.map { "faithgram." + $0 } + fields.map { "faithgram.visual." + $0.key } + FaithgramChoices.all.map { $0.storageKey })
     }
     private static let binaryKeys: Set<String> = ["faithgram.mediaRules", "faithgram.privacy.custom", "faithgram.privacy.previous"]
     private static var flagKeys: Set<String> { Set(PatchClientOption.allCases.map { "patchclient.option." + $0.rawValue }) }
@@ -20,7 +21,7 @@ public struct FaithgramSettingsBackup: Codable {
         return Self(version: 1, createdAt: Date(), values: values)
     }
     public func validate() throws {
-        guard version == 1, values.count <= 256 else { throw FaithgramVaultError.invalidFile }
+        guard version == 1, values.count <= 1024 else { throw FaithgramVaultError.invalidFile }
         for (key, value) in values {
             switch value {
             case .flag: guard Self.flagKeys.contains(key) else { throw FaithgramVaultError.invalidFile }
@@ -28,6 +29,9 @@ public struct FaithgramSettingsBackup: Codable {
                 guard Self.textKeys.contains(key), text.utf8.count <= 32768 else { throw FaithgramVaultError.invalidFile }
                 if key == "faithgram.regexRules" { let _ = try FaithgramMessageFilter.compile(text) }
                 if key.hasPrefix("faithgram.gesture.") { guard ["none", "profiles", "ghost", "lock", "cleanLinks"].contains(text) else { throw FaithgramVaultError.invalidFile } }
+                if let choice = FaithgramChoices.choice(forStorageKey: key) { guard choice.isValid(text) else { throw FaithgramVaultError.invalidFile } }
+                if key == "faithgram.stickerSize" { guard let size = Int(text), (50...200).contains(size) else { throw FaithgramVaultError.invalidFile } }
+                if key == "faithgram.allChatsTitle" { guard text.count <= 32 else { throw FaithgramVaultError.invalidFile } }
             case let .bytes(data):
                 guard Self.binaryKeys.contains(key), data.count <= 512 * 1024 else { throw FaithgramVaultError.invalidFile }
                 if key == "faithgram.mediaRules" { let _ = try JSONDecoder().decode([String: Bool].self, from: data) }

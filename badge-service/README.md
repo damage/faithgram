@@ -1,6 +1,6 @@
 # faithgram badge service
 
-The service publishes an Ed25519-signed badge list and provides an authenticated administrator API. Peer id 1000 is the only accepted administrator. The private administrator token stays on the server and in the owner's device Keychain. App builds contain only the HTTPS endpoint and public verification key.
+The service publishes an Ed25519-signed badge list and provides an authenticated administrator API. The owner Telegram user id is the only accepted administrator; set it with `FAITHGRAM_OWNER_ID`, `--owner`, or an `owner-id` file in the data directory. The private administrator token stays on the server and in the owner's device Keychain. App builds contain only the HTTPS endpoint and public verification key.
 
 Public responses include badge roles, peer ids and issue/expiry dates. Admin notes and revoked-grant history are available through the protected API. Requests and credentials are not logged by this service.
 
@@ -47,7 +47,7 @@ Use a read-only container filesystem, a small temporary filesystem at `/tmp`, dr
 
 The deployment hostname is `badges.faithgram.xyz`. `nginx-bootstrap.conf` provides the HTTP certificate challenge route and health check. Install it as a separate site in the existing Nginx configuration. After issuing a certificate, replace it with `nginx-https.conf`, validate Nginx and reload it. Leave unrelated site configurations in place.
 
-The Cloudflare DNS record is type `A`, name `badges`, content `<server-ip>`, TTL `Auto`. Use `DNS only` during certificate issuance. When enabling Cloudflare proxying, use `Full (strict)` with a valid origin certificate. Public snapshots and administrator responses must not be cached or placed behind an interactive browser challenge.
+The DNS record is type `A`, name `badges`, content the server address, TTL `Auto`. Use `DNS only` during certificate issuance. When enabling Cloudflare proxying, use `Full (strict)` with a valid origin certificate. Public snapshots and administrator responses must not be cached or placed behind an interactive browser challenge.
 
 Certificate issuance uses the official Certbot container pinned by digest in `faithgram-certbot.sh`. Install that wrapper as `/usr/local/sbin/faithgram-certbot` and `renew-nginx.sh` as `/usr/local/sbin/faithgram-renew-nginx`, both with mode 0755. This keeps Certbot's Python dependencies separate from the host. Certificate, account and challenge directories are persistent mounts; the container does not receive the Docker socket.
 
@@ -57,7 +57,7 @@ Verify renewal with `/usr/local/sbin/faithgram-renew-nginx --dry-run --no-random
 
 ## App configuration
 
-`assets/FaithgramBadgeService.json` contains the deployment endpoint and its public verification key. Update the asset checksum in `manifest.json` whenever this configuration changes, then build the app. An empty endpoint or public key disables network synchronization.
+`assets/FaithgramBadgeService.json` contains the deployment endpoint and its public verification key. The build adds the owner id from the `FAITHGRAM_OWNER_ID` secret; it is not stored in the repository. Update the asset checksum in `manifest.json` whenever this configuration changes, then build the app. An empty endpoint or public key disables network synchronization.
 
 ```json
 {
@@ -81,4 +81,4 @@ Existing local grants are not automatically uploaded. New grants use the shared 
 - `POST /v1/admin/grant`: grant or update a badge.
 - `POST /v1/admin/revoke`: revoke one grant without erasing its history.
 
-Admin requests require `Authorization: Bearer <admin-token>` and `X-Faithgram-Actor: 1000`. The token is the server access credential; the app additionally gates the entire admin interface to the matching active Telegram account. Server issue dates are authoritative. Updates preserve the original issue date. A revoked role issued again creates a separate history entry.
+Admin requests require `Authorization: Bearer <admin-token>` and `X-Faithgram-Actor: <owner id>`. The token is the server access credential; the app additionally gates the entire admin interface to the matching active Telegram account. Server issue dates are authoritative. Updates preserve the original issue date. A revoked role issued again creates a separate history entry.

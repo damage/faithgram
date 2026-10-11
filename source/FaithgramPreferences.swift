@@ -90,7 +90,9 @@ public enum FaithgramPreferences {
         }
     }
 
-    public static let badgeOwnerId: Int64 = 1000
+    /// Comes from the badge service configuration (FAITHGRAM_OWNER_ID at build time). Tests override it.
+    static var ownerIdOverride: Int64?
+    public static var badgeOwnerId: Int64 { return ownerIdOverride ?? FaithgramBadgeService.shared.ownerId }
 
     public struct BadgeGrant: Codable, Equatable {
         public let id: String
@@ -108,7 +110,7 @@ public enum FaithgramPreferences {
     }
 
     public static func canManageBadges(accountPeerId: Int64) -> Bool {
-        return accountPeerId == badgeOwnerId
+        return badgeOwnerId > 0 && accountPeerId == badgeOwnerId
     }
 
     private static let badgeLock = NSLock()

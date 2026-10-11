@@ -3,7 +3,12 @@ import XCTest
 @testable import PatchClientCore
 
 final class PreferencesTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        FaithgramPreferences.ownerIdOverride = 1000
+    }
     override func tearDown() {
+        FaithgramPreferences.ownerIdOverride = nil
         for option in PatchClientOption.allCases { UserDefaults.standard.removeObject(forKey: "patchclient.option." + option.rawValue) }
         for key in ["regexRules", "badgeGrants", "badgeRecords", "deletedMark", "editedMark", "mediaRules"] { UserDefaults.standard.removeObject(forKey: "faithgram." + key) }
         super.tearDown()

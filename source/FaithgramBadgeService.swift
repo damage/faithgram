@@ -23,7 +23,7 @@ private final class FaithgramBadgeHTTPDelegate: NSObject, URLSessionTaskDelegate
 
 public final class FaithgramBadgeService {
     public static let shared = FaithgramBadgeService()
-    private struct Configuration: Codable { let endpoint: String; let publicKey: String }
+    private struct Configuration: Codable { let endpoint: String; let publicKey: String; let ownerId: Int64? }
     private struct Envelope: Codable { let payload: Data; let signature: Data }
     private struct AdminResponse: Codable { let grants: [FaithgramPreferences.BadgeGrant] }
     private var configuration: Configuration?
@@ -37,6 +37,8 @@ public final class FaithgramBadgeService {
 
     public var isConfigured: Bool { configuration != nil }
     public var endpoint: String { configuration?.endpoint ?? "" }
+    /// Owner account id injected into the configuration at build time; 0 disables administration.
+    public var ownerId: Int64 { configuration?.ownerId ?? 0 }
     public var syncStatus: String { FaithgramPreferences.text("badgeSyncStatus", fallback: "not configured") }
 
     private init() {
@@ -76,7 +78,7 @@ public final class FaithgramBadgeService {
         var roles = Set<String>()
         for grant in snapshot.grants {
             guard !grant.id.isEmpty, grant.id.utf8.count <= 128, grant.peerId > 0,
-                  grant.issuedBy == FaithgramPreferences.badgeOwnerId, grant.note.isEmpty,
+                  FaithgramPreferences.badgeOwnerId == 0 || grant.issuedBy == FaithgramPreferences.badgeOwnerId, grant.note.isEmpty,
                   grant.revokedAt == nil, ids.insert(grant.id).inserted,
                   roles.insert("\(grant.peerId):\(grant.role.rawValue)").inserted else { throw FaithgramBadgeServiceError.invalidRegistry }
         }

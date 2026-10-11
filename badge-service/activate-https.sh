@@ -5,7 +5,7 @@ domain=badges.faithgram.xyz
 site=/etc/nginx/conf.d/faithgram-badges.conf
 source=/opt/faithgram-badges/nginx-https.conf
 
-getent ahostsv4 "$domain" | awk '{print $1}' | grep -Fxq <server-ip> || {
+getent ahostsv4 "$domain" | awk '{print $1}' | grep -Fxq "${FAITHGRAM_SERVER_IP:?set FAITHGRAM_SERVER_IP to this server's public address}" || {
     printf '%s\n' 'The hostname must resolve directly to this server before initial certificate issuance.' >&2
     exit 78
 }

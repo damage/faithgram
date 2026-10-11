@@ -45,6 +45,14 @@ def build(source: Path, build_number: int):
         raise RuntimeError("The native iOS build requires macOS with Xcode. Run the prepared cloud workflow.")
     configuration = configuration_from_environment()
     source = prepare(source, fetch_submodules=True)
+    registry_resource = source / "Telegram/Resources/FaithgramBadgeService.json"
+    registry_configuration = json.loads(registry_resource.read_text(encoding="utf-8"))
+    owner_id = os.environ.get("FAITHGRAM_OWNER_ID", "").strip()
+    if owner_id:
+        if not owner_id.isdecimal() or int(owner_id) <= 0:
+            raise RuntimeError("FAITHGRAM_OWNER_ID must be a positive Telegram user id.")
+        registry_configuration["ownerId"] = int(owner_id)
+    registry_resource.write_text(json.dumps(registry_configuration, indent=2) + "\n", encoding="utf-8")
     versions = json.loads((source / "versions.json").read_text())
     required = versions["xcode"]
     actual = subprocess.run(["xcodebuild", "-version"], check=True, capture_output=True, text=True).stdout
@@ -102,6 +110,7 @@ def build(source: Path, build_number: int):
             raise RuntimeError("The unsigned artifact must include the Faithgram Live Activity extension.")
         expected_registry = json.loads((PROJECT / "assets/FaithgramBadgeService.json").read_text(encoding="utf-8"))
         bundled_registry = json.loads(archive.read("Payload/Telegram.app/FaithgramBadgeService.json"))
+        bundled_registry.pop("ownerId", None)
         if bundled_registry != expected_registry:
             raise RuntimeError("The bundled badge registry configuration differs from the reviewed asset.")
         print("Verified badge registry resource: " + expected_registry["endpoint"])

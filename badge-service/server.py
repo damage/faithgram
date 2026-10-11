@@ -20,13 +20,13 @@ import uuid
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-OWNER = 1000
 ROLES = {'developer', 'betaTester', 'paidSubscriber', 'verified'}
 
 
 class Registry:
-    def __init__(self, directory: Path, initialize=False):
+    def __init__(self, directory: Path, initialize=False, owner=None):
         self.directory = directory.resolve()
+        self.owner = self.resolve_owner(owner)
         if initialize:
             self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
             for name, content in [
@@ -58,7 +58,7 @@ class Registry:
                 CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY, at REAL NOT NULL, actor INTEGER NOT NULL, action TEXT NOT NULL, grant_id TEXT NOT NULL);
             ''')
             if db.execute('SELECT COUNT(*) FROM grants').fetchone()[0] == 0:
-                db.execute('INSERT INTO grants VALUES(?,?,?,?,?,?,?,?)', ('owner-developer', OWNER, 'developer', None, OWNER, None, '', None))
+                db.execute('INSERT INTO grants VALUES(?,?,?,?,?,?,?,?)', ('owner-developer', self.owner, 'developer', None, self.owner, None, '', None))
         (self.directory / 'registry.sqlite3').chmod(0o600)
 
     @contextmanager
@@ -89,6 +89,19 @@ class Registry:
         with self.database() as db:
             return {'grants': [self.record(row, private=True) for row in db.execute('SELECT * FROM grants ORDER BY issued_at DESC')], 'audit': [dict(row) for row in db.execute('SELECT * FROM audit ORDER BY id DESC LIMIT 1000')]}
 
+    def resolve_owner(self, owner):
+        value = owner if owner is not None else os.environ.get('FAITHGRAM_OWNER_ID', '').strip()
+        if not value:
+            path = self.directory / 'owner-id'
+            value = path.read_text().strip() if path.exists() else ''
+        try:
+            owner_id = int(value)
+        except (TypeError, ValueError):
+            owner_id = 0
+        if owner_id <= 0:
+            raise ValueError('set FAITHGRAM_OWNER_ID or write the owner Telegram user id to owner-id in the data directory')
+        return owner_id
+
     def authorize(self, bearer, actor, address):
         now = time.monotonic()
         with self.rate_lock:
@@ -97,7 +110,7 @@ class Registry:
                 failures, since = 0, now
             if failures >= 20:
                 return False
-            ok = actor == str(OWNER) and len(bearer) <= 256 and hmac.compare_digest(hashlib.sha256(bearer.encode()).digest(), self.token_hash)
+            ok = actor == str(self.owner) and len(bearer) <= 256 and hmac.compare_digest(hashlib.sha256(bearer.encode()).digest(), self.token_hash)
             if not ok:
                 self.failures[address] = (failures + 1, since)
                 self.failures.move_to_end(address)
@@ -127,10 +140,10 @@ class Registry:
                 action = 'update'
             else:
                 grant_id = str(uuid.uuid4())
-                db.execute('INSERT INTO grants VALUES(?,?,?,?,?,?,?,?)', (grant_id, peer, role, now, OWNER, expiry, note, None))
+                db.execute('INSERT INTO grants VALUES(?,?,?,?,?,?,?,?)', (grant_id, peer, role, now, self.owner, expiry, note, None))
                 action = 'grant'
             db.execute('UPDATE state SET revision=revision+1 WHERE id=1')
-            db.execute('INSERT INTO audit(at,actor,action,grant_id) VALUES(?,?,?,?)', (now, OWNER, action, grant_id))
+            db.execute('INSERT INTO audit(at,actor,action,grant_id) VALUES(?,?,?,?)', (now, self.owner, action, grant_id))
         return {'id': grant_id}
 
     def revoke(self, grant_id):
@@ -139,7 +152,7 @@ class Registry:
             if result.rowcount != 1:
                 raise ValueError('active grant not found')
             db.execute('UPDATE state SET revision=revision+1 WHERE id=1')
-            db.execute('INSERT INTO audit(at,actor,action,grant_id) VALUES(?,?,?,?)', (time.time(), OWNER, 'revoke', grant_id))
+            db.execute('INSERT INTO audit(at,actor,action,grant_id) VALUES(?,?,?,?)', (time.time(), self.owner, 'revoke', grant_id))
         return {'ok': True}
 
 
@@ -197,9 +210,10 @@ if __name__ == '__main__':
     parser.add_argument('--init', action='store_true')
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=8787)
+    parser.add_argument('--owner', type=int, default=None, help='owner Telegram user id (or FAITHGRAM_OWNER_ID / owner-id file)')
     args = parser.parse_args()
     os.umask(0o077)
-    store = Registry(args.data, initialize=args.init)
+    store = Registry(args.data, initialize=args.init, owner=args.owner)
     if args.init:
         print('Public signing key: ' + store.public_key)
         print('Administrator credential saved locally in admin-token. Keep this file private.')
