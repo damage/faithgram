@@ -8,7 +8,7 @@
   },
   "patch": {
     "path": "patches/0001-local-policy.patch",
-    "sha256": "af0f3c4dfd7a5922aec0ce8dc24884618b6910c01f810f4fe5936726d89b6acb",
+    "sha256": "d2884d53200500fdb1c80c87362197e97f99d177e01c1e900182acd0d63ef6da",
     "files": [
       "Telegram/BUILD",
       "Telegram/FaithgramActivityWidget/FaithgramActivityWidget.swift",

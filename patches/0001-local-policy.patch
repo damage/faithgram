@@ -2792,10 +2792,10 @@ index 00000000..bad66233
 +}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramBadgeService.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramBadgeService.swift
 new file mode 100644
-index 00000000..c37e044d
+index 00000000..99c11680
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramBadgeService.swift
-@@ -0,0 +1,193 @@
+@@ -0,0 +1,200 @@
 +import Foundation
 +import CryptoKit
 +import Security
@@ -2836,7 +2836,14 @@ index 00000000..c37e044d
 +    public var isConfigured: Bool { configuration != nil }
 +    public var endpoint: String { configuration?.endpoint ?? "" }
 +    /// Owner account id injected into the configuration at build time; 0 disables administration.
-+    public var ownerId: Int64 { configuration?.ownerId ?? 0 }
++    public var ownerId: Int64 { return Self.configuredOwnerId }
++    /// Read directly from the bundled configuration so it never touches `shared` during its own initialization.
++    public static let configuredOwnerId: Int64 = {
++        guard let path = Bundle.main.path(forResource: "FaithgramBadgeService", ofType: "json"),
++              let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
++              let value = try? JSONDecoder().decode(Configuration.self, from: data), let ownerId = value.ownerId, ownerId > 0 else { return 0 }
++        return ownerId
++    }()
 +    public var syncStatus: String { FaithgramPreferences.text("badgeSyncStatus", fallback: "not configured") }
 +
 +    private init() {
@@ -3997,7 +4004,7 @@ index 00000000..2ead6e91
 +}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramPreferences.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramPreferences.swift
 new file mode 100644
-index 00000000..cfe4394a
+index 00000000..2a6239c6
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramPreferences.swift
 @@ -0,0 +1,202 @@
@@ -4095,7 +4102,7 @@ index 00000000..cfe4394a
 +
 +    /// Comes from the badge service configuration (FAITHGRAM_OWNER_ID at build time). Tests override it.
 +    static var ownerIdOverride: Int64?
-+    public static var badgeOwnerId: Int64 { return ownerIdOverride ?? FaithgramBadgeService.shared.ownerId }
++    public static var badgeOwnerId: Int64 { return ownerIdOverride ?? FaithgramBadgeService.configuredOwnerId }
 +
 +    public struct BadgeGrant: Codable, Equatable {
 +        public let id: String

@@ -92,7 +92,7 @@ public enum FaithgramPreferences {
 
     /// Comes from the badge service configuration (FAITHGRAM_OWNER_ID at build time). Tests override it.
     static var ownerIdOverride: Int64?
-    public static var badgeOwnerId: Int64 { return ownerIdOverride ?? FaithgramBadgeService.shared.ownerId }
+    public static var badgeOwnerId: Int64 { return ownerIdOverride ?? FaithgramBadgeService.configuredOwnerId }
 
     public struct BadgeGrant: Codable, Equatable {
         public let id: String

@@ -38,7 +38,14 @@ public final class FaithgramBadgeService {
     public var isConfigured: Bool { configuration != nil }
     public var endpoint: String { configuration?.endpoint ?? "" }
     /// Owner account id injected into the configuration at build time; 0 disables administration.
-    public var ownerId: Int64 { configuration?.ownerId ?? 0 }
+    public var ownerId: Int64 { return Self.configuredOwnerId }
+    /// Read directly from the bundled configuration so it never touches `shared` during its own initialization.
+    public static let configuredOwnerId: Int64 = {
+        guard let path = Bundle.main.path(forResource: "FaithgramBadgeService", ofType: "json"),
+              let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let value = try? JSONDecoder().decode(Configuration.self, from: data), let ownerId = value.ownerId, ownerId > 0 else { return 0 }
+        return ownerId
+    }()
     public var syncStatus: String { FaithgramPreferences.text("badgeSyncStatus", fallback: "not configured") }
 
     private init() {
