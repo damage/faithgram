@@ -220,6 +220,63 @@ index e10ff2b8..a296aae8 100644
  }
  
  static NSString * _Nonnull getSingleIndirect(_PresentationStrings * _Nonnull strings, uint32_t keyId) {
+diff --git a/submodules/AccountContext/Sources/FaithgramGiftHelpers.swift b/submodules/AccountContext/Sources/FaithgramGiftHelpers.swift
+new file mode 100644
+index 00000000..5d626926
+--- /dev/null
++++ b/submodules/AccountContext/Sources/FaithgramGiftHelpers.swift
+@@ -0,0 +1,51 @@
++import Foundation
++import UIKit
++import SwiftSignalKit
++import TelegramCore
++
++/// Extra recipients chosen in the contact picker for one gift purchase. Consumed by the gift setup screen.
++public enum FaithgramGiftRecipients {
++    public static var extra: [EnginePeer.Id] = []
++}
++
++/// Asks for the Telegram cloud password before gift actions when the corresponding switch is on.
++public enum FaithgramPasswordGate {
++    public static func confirm(context: AccountContext, title: String, completion: @escaping () -> Void) {
++        guard PatchClientPolicy.isEnabled(.giftActions2FA) else {
++            completion()
++            return
++        }
++        let _ = (context.engine.auth.twoStepVerificationConfiguration()
++        |> deliverOnMainQueue).start(next: { configuration in
++            guard case .set = configuration else {
++                completion()
++                return
++            }
++            prompt(context: context, title: title, message: FaithgramPreferences.interfaceText("Enter your Telegram cloud password to continue."), completion: completion)
++        })
++    }
++
++    private static func prompt(context: AccountContext, title: String, message: String, completion: @escaping () -> Void) {
++        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
++        alert.addTextField { field in
++            field.isSecureTextEntry = true
++            field.placeholder = FaithgramPreferences.interfaceText("Password")
++        }
++        alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
++        alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Confirm"), style: .default, handler: { _ in
++            let password = alert.textFields?.first?.text ?? ""
++            let _ = (context.engine.auth.requestTwoStepVerifiationSettings(password: password)
++            |> deliverOnMainQueue).start(next: { _ in
++                completion()
++            }, error: { error in
++                switch error {
++                case .limitExceeded:
++                    prompt(context: context, title: title, message: FaithgramPreferences.interfaceText("Too many attempts. Try again later."), completion: completion)
++                default:
++                    prompt(context: context, title: title, message: FaithgramPreferences.interfaceText("Wrong password. Enter your Telegram cloud password to continue."), completion: completion)
++                }
++            })
++        }))
++        context.sharedContext.mainWindow?.presentNative(alert)
++    }
++}
 diff --git a/submodules/ChatListUI/Sources/ChatListController.swift b/submodules/ChatListUI/Sources/ChatListController.swift
 index eafe9575..c6d327a9 100644
 --- a/submodules/ChatListUI/Sources/ChatListController.swift
@@ -884,6 +941,168 @@ index 00000000..d0d68dc2
 +        context.sharedContext.mainWindow?.presentNative(alert)
 +    }
 +}
+diff --git a/submodules/SettingsUI/Sources/FaithgramGiftManagerController.swift b/submodules/SettingsUI/Sources/FaithgramGiftManagerController.swift
+new file mode 100644
+index 00000000..4d363f94
+--- /dev/null
++++ b/submodules/SettingsUI/Sources/FaithgramGiftManagerController.swift
+@@ -0,0 +1,156 @@
++import Foundation
++import UIKit
++import Display
++import SwiftSignalKit
++import TelegramCore
++import TelegramPresentationData
++import ItemListUI
++import PresentationDataUtils
++import AccountContext
++
++private final class FaithgramGiftManagerArguments {
++    let context: AccountContext
++    let gifts: ProfileGiftsContext
++    weak var controller: ViewController?
++    var latestGifts: [ProfileGiftsContext.State.StarGift] = []
++
++    init(context: AccountContext, gifts: ProfileGiftsContext) {
++        self.context = context
++        self.gifts = gifts
++    }
++
++    func present(_ alert: UIAlertController) {
++        if let popover = alert.popoverPresentationController, let view = self.controller?.view {
++            popover.sourceView = view
++            popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1.0, height: 1.0)
++        }
++        self.context.sharedContext.mainWindow?.presentNative(alert)
++    }
++
++    func openActions(_ gift: ProfileGiftsContext.State.StarGift) {
++        guard let reference = gift.reference else { return }
++        let alert = UIAlertController(title: faithgramGiftTitle(gift), message: nil, preferredStyle: .actionSheet)
++        alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText(gift.savedToProfile ? "Hide from profile" : "Show on profile"), style: .default, handler: { [gifts] _ in
++            gifts.updateStarGiftAddedToProfile(reference: reference, added: !gift.savedToProfile)
++        }))
++        if case .unique = gift.gift {
++            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText(gift.pinnedToTop ? "Unpin" : "Pin to top"), style: .default, handler: { [gifts] _ in
++                gifts.updateStarGiftPinnedToTop(reference: reference, pinnedToTop: !gift.pinnedToTop)
++            }))
++        }
++        if case let .unique(unique) = gift.gift {
++            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Copy link"), style: .default, handler: { _ in
++                UIPasteboard.general.string = "https://t.me/nft/\(unique.slug)"
++            }))
++        }
++        alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
++        self.present(alert)
++    }
++
++    func bulk(_ kind: FaithgramGiftManagerEntry.Bulk, gifts list: [ProfileGiftsContext.State.StarGift]) {
++        switch kind {
++        case .hideAll:
++            for gift in list where gift.savedToProfile { if let reference = gift.reference { self.gifts.updateStarGiftAddedToProfile(reference: reference, added: false) } }
++        case .showAll:
++            for gift in list where !gift.savedToProfile { if let reference = gift.reference { self.gifts.updateStarGiftAddedToProfile(reference: reference, added: true) } }
++        case .unpinAll:
++            self.gifts.updatePinnedToTopStarGifts(references: [])
++        case .loadMore:
++            self.gifts.loadMore()
++        }
++    }
++}
++
++private func faithgramGiftTitle(_ gift: ProfileGiftsContext.State.StarGift) -> String {
++    switch gift.gift {
++    case let .generic(generic): return generic.title ?? "Gift"
++    case let .unique(unique): return "\(unique.title) #\(unique.number)"
++    }
++}
++
++private enum FaithgramGiftManagerEntry: ItemListNodeEntry {
++    enum Bulk: Int32 { case hideAll, showAll, unpinAll, loadMore }
++
++    case header(Int32, String)
++    case footer(Int32, String)
++    case bulk(Int32, Bulk, String)
++    case gift(Int32, ProfileGiftsContext.State.StarGift, String, String)
++
++    var section: ItemListSectionId {
++        switch self {
++        case .header, .footer, .bulk: return 0
++        case .gift: return 1
++        }
++    }
++    var stableId: Int32 {
++        switch self {
++        case let .header(index, _), let .footer(index, _), let .bulk(index, _, _), let .gift(index, _, _, _): return index
++        }
++    }
++    static func ==(lhs: FaithgramGiftManagerEntry, rhs: FaithgramGiftManagerEntry) -> Bool {
++        switch (lhs, rhs) {
++        case let (.header(a, b), .header(c, d)): return a == c && b == d
++        case let (.footer(a, b), .footer(c, d)): return a == c && b == d
++        case let (.bulk(a, b, c), .bulk(d, e, f)): return a == d && b == e && c == f
++        case let (.gift(a, b, c, d), .gift(e, f, g, h)): return a == e && b == f && c == g && d == h
++        default: return false
++        }
++    }
++    static func <(lhs: FaithgramGiftManagerEntry, rhs: FaithgramGiftManagerEntry) -> Bool { return lhs.stableId < rhs.stableId }
++
++    func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
++        let arguments = arguments as! FaithgramGiftManagerArguments
++        switch self {
++        case let .header(_, text):
++            return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
++        case let .footer(_, text):
++            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
++        case let .bulk(_, kind, title):
++            return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: title, kind: kind == .hideAll ? .destructive : .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
++                arguments.bulk(kind, gifts: arguments.latestGifts)
++            })
++        case let .gift(_, gift, title, detail):
++            return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: title, label: detail, labelStyle: .multilineDetailText, sectionId: self.section, style: .blocks, disclosureStyle: .arrow, action: {
++                arguments.openActions(gift)
++            })
++        }
++    }
++}
++
++func faithgramGiftManagerController(context: AccountContext) -> ViewController {
++    let giftsContext = ProfileGiftsContext(account: context.account, peerId: context.account.peerId, collectionId: nil, sorting: .date, filter: .All, limit: 100)
++    let arguments = FaithgramGiftManagerArguments(context: context, gifts: giftsContext)
++    let text = FaithgramPreferences.interfaceText
++    let signal = combineLatest(context.sharedContext.presentationData, giftsContext.state)
++    |> deliverOnMainQueue
++    |> map { presentationData, state -> (ItemListControllerState, (ItemListNodeState, Any)) in
++        arguments.latestGifts = state.gifts
++        var entries: [FaithgramGiftManagerEntry] = []
++        var index: Int32 = 0
++        func add(_ entry: FaithgramGiftManagerEntry) { entries.append(entry); index += 1 }
++        let shown = state.gifts.filter { $0.savedToProfile }.count
++        let pinned = state.gifts.filter { $0.pinnedToTop }.count
++        add(.header(index, text("Gifts")))
++        add(.bulk(index, .showAll, text("Show all on profile")))
++        add(.bulk(index, .hideAll, text("Hide all from profile")))
++        add(.bulk(index, .unpinAll, text("Unpin all")))
++        add(.footer(index, text("\(state.gifts.count) gifts loaded · \(shown) shown on profile · \(pinned) pinned. Tap a gift for actions.")))
++        for gift in state.gifts {
++            var parts: [String] = []
++            parts.append(text(gift.savedToProfile ? "shown on profile" : "hidden"))
++            if gift.pinnedToTop { parts.append(text("pinned")) }
++            if case .unique = gift.gift { parts.append(text("unique")) }
++            if let from = gift.fromPeer { parts.append(text("from ") + from.compactDisplayTitle) }
++            add(.gift(index, gift, faithgramGiftTitle(gift), parts.joined(separator: " · ")))
++        }
++        if case let .ready(canLoadMore, _) = state.dataState, canLoadMore {
++            add(.bulk(index, .loadMore, text("Load more")))
++        }
++        let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(text("Gift Manager")), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
++        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: entries, style: .blocks, animateChanges: false)
++        return (controllerState, (listState, arguments))
++    }
++    let controller = ItemListController(context: context, state: signal)
++    arguments.controller = controller
++    return controller
++}
 diff --git a/submodules/SettingsUI/Sources/FaithgramHistoryController.swift b/submodules/SettingsUI/Sources/FaithgramHistoryController.swift
 new file mode 100644
 index 00000000..4c39a6f5
@@ -1536,10 +1755,10 @@ index 00000000..d80a8954
 +}
 diff --git a/submodules/SettingsUI/Sources/PatchClientSettingsController.swift b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
 new file mode 100644
-index 00000000..5a8f549a
+index 00000000..6014ca51
 --- /dev/null
 +++ b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
-@@ -0,0 +1,855 @@
+@@ -0,0 +1,857 @@
 +import Foundation
 +import UIKit
 +import Display
@@ -1855,6 +2074,7 @@ index 00000000..5a8f549a
 +                toggle("Search gifts in send/profile", "magnifyingglass", .giftSearch),
 +                toggle("Gift cart", "gift", .giftCart),
 +                toggle("Gift Manager", "circle.grid.2x2", .giftManager),
++                link("Open Gift Manager", "square.grid.2x2") { env in env.push(faithgramGiftManagerController(context: env.context)) },
 +                toggle("Skip upgrade rolling", "clock", .skipUpgradeRolling)
 +            ]),
 +            FaithgramSection([toggle("Show hidden gifts", "gift", .showHiddenGifts)], footer: "Show gifts that Telegram removed from the store but which can still be bought. Gift ids are configured in Faithgram tools → Extra gifts."),
@@ -1919,6 +2139,7 @@ index 00000000..5a8f549a
 +                toggle("Lowercase interface", "textformat.abc", .lowercaseInterface),
 +                toggle("Local premium appearance", "star", .localPremium),
 +                toggle("Faithgram Live Activity", "circle.dashed", .dynamicIsland),
++                toggle("Island badge in the app", "capsule", .islandBadge),
 +                link("Live Activity status", "info.circle", label: FaithgramPreferences.text("activityStatus", fallback: "Check permissions and signing")) { env in env.showActivityStatus() },
 +                link("Theme, text size and chat appearance", "paintpalette") { env in env.push(themeSettingsController(context: env.context)) },
 +                link("Stickers and emoji", "face.smiling") { env in env.push(installedStickerPacksController(context: env.context, mode: .general)) }
@@ -4911,10 +5132,10 @@ index 00000000..7398fa99
 +}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/PatchClientPolicy.swift b/submodules/TelegramCore/Sources/PatchClient/PatchClientPolicy.swift
 new file mode 100644
-index 00000000..36a32865
+index 00000000..6aa9fa00
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/PatchClient/PatchClientPolicy.swift
-@@ -0,0 +1,484 @@
+@@ -0,0 +1,486 @@
 +import Foundation
 +import TelegramApi
 +
@@ -5044,6 +5265,7 @@ index 00000000..36a32865
 +    case whisperMessages
 +    case uploadBoost
 +    case quickTranslateButton
++    case islandBadge
 +    case contextMenuReply
 +    case contextMenuEdit
 +    case contextMenuCopy
@@ -5193,6 +5415,7 @@ index 00000000..36a32865
 +        case .whisperMessages: return "Whisper messages"
 +        case .uploadBoost: return "Upload Boost"
 +        case .quickTranslateButton: return "Quick Translate button"
++        case .islandBadge: return "Island badge in the app"
 +        case .contextMenuReply: return "Reply"
 +        case .contextMenuEdit: return "Edit"
 +        case .contextMenuCopy: return "Copy"
@@ -5307,7 +5530,7 @@ index 00000000..36a32865
 +    /// Options that are on unless the user turns them off. Everything else stays off by default.
 +    public var isOnByDefault: Bool {
 +        switch self {
-+        case .dynamicIsland,
++        case .dynamicIsland, .islandBadge,
 +             .showProfileId, .showDataCenter, .showMutualContact, .showJoinedDate,
 +             .showMediaOrigin, .sendPhotosHD, .messageShot, .deletionEffects, .originalForwardDate, .hideArticleButton, .secondsInMessages,
 +             .multipleGiftSending, .gridGiftSending, .giftChooseUsers, .giftSearch, .giftCart, .giftManager, .skipUpgradeRolling, .showGiftIds, .giftEmbed,
@@ -6806,8 +7029,272 @@ index 586c7e72..29314a78 100644
 +    }
 +    return result
 +}
+diff --git a/submodules/TelegramUI/Components/Gifts/GiftAnimationComponent/Sources/GiftCompositionComponent.swift b/submodules/TelegramUI/Components/Gifts/GiftAnimationComponent/Sources/GiftCompositionComponent.swift
+index f4f94e02..d8523cd6 100644
+--- a/submodules/TelegramUI/Components/Gifts/GiftAnimationComponent/Sources/GiftCompositionComponent.swift
++++ b/submodules/TelegramUI/Components/Gifts/GiftAnimationComponent/Sources/GiftCompositionComponent.swift
+@@ -740,7 +740,7 @@ public final class GiftCompositionComponent: Component {
+                     }
+                 }
+                 
+-                if self.previewTimer == nil && sampleAttributes.count > 3 {
++                if self.previewTimer == nil && sampleAttributes.count > 3 && !PatchClientPolicy.isEnabled(.skipUpgradeRolling) {
+                     self.previewTimer = SwiftSignalKit.Timer(timeout: 2.0, repeat: true, completion: { [weak self] in
+                         guard let self, !self.previewModels.isEmpty else { return }
+                         self.previewModelIndex = (self.previewModelIndex + 1) % Int32(self.previewModels.count)
+diff --git a/submodules/TelegramUI/Components/Gifts/GiftSetupScreen/Sources/GiftSetupScreen.swift b/submodules/TelegramUI/Components/Gifts/GiftSetupScreen/Sources/GiftSetupScreen.swift
+index 0db09aed..d3cd4b97 100644
+--- a/submodules/TelegramUI/Components/Gifts/GiftSetupScreen/Sources/GiftSetupScreen.swift
++++ b/submodules/TelegramUI/Components/Gifts/GiftSetupScreen/Sources/GiftSetupScreen.swift
+@@ -113,6 +113,7 @@ private final class GiftSetupScreenComponent: Component {
+         private let starsSection = ComponentView<Empty>()
+         private let upgradeSection = ComponentView<Empty>()
+         private let hideSection = ComponentView<Empty>()
++        private let quantitySection = ComponentView<Empty>()
+         
+         private let glassContainerView = GlassBackgroundContainerView()
+         private let inputPanel = ComponentView<Empty>()
+@@ -145,6 +146,8 @@ private final class GiftSetupScreenComponent: Component {
+         private var hideName = false
+         private var includeUpgrade = false
+         private var payWithStars = false
++        private var quantity: Int = 1
++        private var faithgramConfirmed = false
+         
+         private var inProgress = false
+                         
+@@ -332,6 +335,14 @@ private final class GiftSetupScreenComponent: Component {
+             guard let component = self.component, let environment = self.environment else {
+                 return
+             }
++            if !self.faithgramConfirmed, PatchClientPolicy.isEnabled(.giftActions2FA) {
++                FaithgramPasswordGate.confirm(context: component.context, title: FaithgramPreferences.interfaceText("Confirm gift")) { [weak self] in
++                    self?.faithgramConfirmed = true
++                    self?.proceed()
++                }
++                return
++            }
++            self.faithgramConfirmed = false
+                         
+             switch component.subject {
+             case let .premium(product):
+@@ -463,6 +474,57 @@ private final class GiftSetupScreenComponent: Component {
+             })
+         }
+         
++        private func chooseQuantity() {
++            guard let component = self.component else {
++                return
++            }
++            let apply: (Int) -> Void = { [weak self] value in
++                guard let self else {
++                    return
++                }
++                self.quantity = min(max(1, value), 1000)
++                self.state?.updated(transition: .spring(duration: 0.4))
++            }
++            let alert: UIAlertController
++            if PatchClientPolicy.isEnabled(.gridGiftSending) {
++                alert = UIAlertController(title: FaithgramPreferences.interfaceText("Quantity"), message: nil, preferredStyle: .actionSheet)
++                for value in [1, 2, 3, 5, 10, 25, 50, 100] {
++                    alert.addAction(UIAlertAction(title: "\(value)×", style: .default, handler: { _ in apply(value) }))
++                }
++                alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Custom…"), style: .default, handler: { [weak self] _ in
++                    self?.chooseCustomQuantity()
++                }))
++                alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
++                if let popover = alert.popoverPresentationController, let view = self.environment?.controller()?.view {
++                    popover.sourceView = view
++                    popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1.0, height: 1.0)
++                }
++                component.context.sharedContext.mainWindow?.presentNative(alert)
++            } else {
++                self.chooseCustomQuantity()
++            }
++        }
++        
++        private func chooseCustomQuantity() {
++            guard let component = self.component else {
++                return
++            }
++            let alert = UIAlertController(title: FaithgramPreferences.interfaceText("Quantity"), message: FaithgramPreferences.interfaceText("How many times to send this gift (1–1000)."), preferredStyle: .alert)
++            alert.addTextField { [weak self] field in
++                field.keyboardType = .numberPad
++                field.text = "\(self?.quantity ?? 1)"
++            }
++            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
++            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Done"), style: .default, handler: { [weak self] _ in
++                guard let self, let value = Int(alert.textFields?.first?.text ?? "") else {
++                    return
++                }
++                self.quantity = min(max(1, value), 1000)
++                self.state?.updated(transition: .spring(duration: 0.4))
++            }))
++            component.context.sharedContext.mainWindow?.presentNative(alert)
++        }
++        
+         private func proceedWithStarGift() {
+             guard let component = self.component, let environment = self.environment, let starsContext = component.context.starsContext, let starsState = starsContext.currentState else {
+                 return
+@@ -516,6 +578,27 @@ private final class GiftSetupScreenComponent: Component {
+                 source = .starGift(hideName: self.hideName, includeUpgrade: self.includeUpgrade, peerId: peerId, giftId: starGift.id, text: textInputText.string, entities: entities)
+             }
+             
++            let copies = PatchClientPolicy.isEnabled(.multipleGiftSending) ? max(1, self.quantity) : 1
++            var extraRecipients: [EnginePeer.Id] = []
++            var sourceFor: (EnginePeer.Id) -> BotPaymentInvoiceSource = { _ in source }
++            if case let .starGift(starGift, _) = component.subject {
++                if PatchClientPolicy.isEnabled(.giftChooseUsers) {
++                    extraRecipients = FaithgramGiftRecipients.extra.filter { $0 != peerId }
++                }
++                let hideName = self.hideName
++                let includeUpgrade = self.includeUpgrade
++                sourceFor = { target in
++                    return .starGift(hideName: hideName, includeUpgrade: includeUpgrade, peerId: target, giftId: starGift.id, text: textInputText.string, entities: entities)
++                }
++                finalPrice *= Int64(copies * (1 + extraRecipients.count))
++            }
++            var sendSources: [BotPaymentInvoiceSource] = []
++            for target in [peerId] + extraRecipients {
++                for _ in 0 ..< copies {
++                    sendSources.append(sourceFor(target))
++                }
++            }
++            
+             let proceed = { [weak self] in
+                 guard let self else {
+                     return
+@@ -526,21 +609,30 @@ private final class GiftSetupScreenComponent: Component {
+                 
+                 let completion = component.completion
+                 
+-                let signal = BotCheckoutController.InputData.fetch(context: component.context, source: source)
+-                |> `catch` { error -> Signal<BotCheckoutController.InputData, SendBotPaymentFormError> in
+-                    switch error {
+-                    case .disallowedStarGifts:
+-                        return .fail(.disallowedStarGift)
+-                    case .starGiftsUserLimit:
+-                        return .fail(.starGiftUserLimit)
+-                    default:
+-                        return .fail(.generic)
++                let sendOnce: (BotPaymentInvoiceSource) -> Signal<SendBotPaymentResult, SendBotPaymentFormError> = { source in
++                    return BotCheckoutController.InputData.fetch(context: component.context, source: source)
++                    |> `catch` { error -> Signal<BotCheckoutController.InputData, SendBotPaymentFormError> in
++                        switch error {
++                        case .disallowedStarGifts:
++                            return .fail(.disallowedStarGift)
++                        case .starGiftsUserLimit:
++                            return .fail(.starGiftUserLimit)
++                        default:
++                            return .fail(.generic)
++                        }
++                    }
++                    |> mapToSignal { inputData -> Signal<SendBotPaymentResult, SendBotPaymentFormError> in
++                        return component.context.engine.payments.sendStarsPaymentForm(formId: inputData.form.id, source: source)
+                     }
+                 }
+-                |> mapToSignal { inputData -> Signal<SendBotPaymentResult, SendBotPaymentFormError> in
+-                    return component.context.engine.payments.sendStarsPaymentForm(formId: inputData.form.id, source: source)
++                var chained = sendOnce(sendSources.first ?? source)
++                for extra in sendSources.dropFirst() {
++                    chained = chained |> mapToSignal { _ -> Signal<SendBotPaymentResult, SendBotPaymentFormError> in
++                        return sendOnce(extra)
++                    }
+                 }
+-                |> deliverOnMainQueue
++                FaithgramGiftRecipients.extra = []
++                let signal = chained |> deliverOnMainQueue
+                                 
+                 let _ = signal.start(next: { [weak self] result in
+                     guard let self, let controller = self.environment?.controller(), let navigationController = controller.navigationController as? NavigationController else {
+@@ -1770,6 +1862,70 @@ private final class GiftSetupScreenComponent: Component {
+             }
+             contentHeight += sectionSpacing
+             
++            if PatchClientPolicy.isEnabled(.multipleGiftSending), case let .starGift(quantityGift, _) = component.subject, !quantityGift.flags.contains(.isAuction) {
++                let recipientCount = 1 + (PatchClientPolicy.isEnabled(.giftChooseUsers) ? FaithgramGiftRecipients.extra.filter { $0 != component.peerId }.count : 0)
++                let quantityFooter = recipientCount > 1
++                    ? FaithgramPreferences.interfaceText("Each recipient gets \(self.quantity) × this gift. \(recipientCount) recipients selected.")
++                    : FaithgramPreferences.interfaceText("Sends this gift \(self.quantity) times in a row. Each copy is paid separately.")
++                let quantitySectionSize = self.quantitySection.update(
++                    transition: transition,
++                    component: AnyComponent(ListSectionComponent(
++                        theme: theme,
++                        style: .glass,
++                        header: nil,
++                        footer: AnyComponent(MultilineTextComponent(
++                            text: .plain(NSAttributedString(
++                                string: quantityFooter,
++                                font: Font.regular(presentationData.listsFontSize.itemListBaseHeaderFontSize),
++                                textColor: theme.list.freeTextColor
++                            )),
++                            maximumNumberOfLines: 0
++                        )),
++                        items: [
++                            AnyComponentWithIdentity(id: 0, component: AnyComponent(ListActionItemComponent(
++                                theme: theme,
++                                style: .glass,
++                                title: AnyComponent(VStack([
++                                    AnyComponentWithIdentity(id: AnyHashable(0), component: AnyComponent(MultilineTextComponent(
++                                        text: .plain(NSAttributedString(
++                                            string: FaithgramPreferences.interfaceText("Quantity"),
++                                            font: Font.regular(presentationData.listsFontSize.baseDisplaySize),
++                                            textColor: theme.list.itemPrimaryTextColor
++                                        )),
++                                        maximumNumberOfLines: 1
++                                    ))),
++                                    AnyComponentWithIdentity(id: AnyHashable(1), component: AnyComponent(MultilineTextComponent(
++                                        text: .plain(NSAttributedString(
++                                            string: "\(self.quantity)×",
++                                            font: Font.regular(presentationData.listsFontSize.itemListBaseHeaderFontSize),
++                                            textColor: theme.list.itemSecondaryTextColor
++                                        )),
++                                        maximumNumberOfLines: 1
++                                    )))
++                                ], alignment: .left, spacing: 2.0)),
++                                accessory: .arrow,
++                                action: { [weak self] _ in
++                                    self?.chooseQuantity()
++                                }
++                            )))
++                        ]
++                    )),
++                    environment: {},
++                    containerSize: CGSize(width: availableSize.width - sideInset * 2.0, height: 10000.0)
++                )
++                let quantitySectionFrame = CGRect(origin: CGPoint(x: sideInset, y: contentHeight), size: quantitySectionSize)
++                if let quantitySectionView = self.quantitySection.view {
++                    if quantitySectionView.superview == nil {
++                        self.scrollContentView.addSubview(quantitySectionView)
++                    }
++                    transition.setFrame(view: quantitySectionView, frame: quantitySectionFrame)
++                }
++                contentHeight += quantitySectionSize.height
++                contentHeight += sectionSpacing
++            } else if let quantitySectionView = self.quantitySection.view, quantitySectionView.superview != nil {
++                quantitySectionView.removeFromSuperview()
++            }
++            
+             if case let .starGift(starGift, _) = component.subject, let availability = starGift.availability {
+                 contentHeight -= 77.0
+                 contentHeight += 16.0
+@@ -1888,7 +2044,13 @@ private final class GiftSetupScreenComponent: Component {
+                 if self.includeUpgrade, let upgradePrice = starGift.upgradeStars {
+                     finalPrice += upgradePrice
+                 }
+-                let amountString = presentationStringsFormattedNumber(Int32(finalPrice), presentationData.dateTimeFormat.groupingSeparator)
++                if PatchClientPolicy.isEnabled(.multipleGiftSending) {
++                    finalPrice *= Int64(max(1, self.quantity))
++                }
++                if PatchClientPolicy.isEnabled(.giftChooseUsers) {
++                    finalPrice *= Int64(1 + FaithgramGiftRecipients.extra.filter { $0 != component.peerId }.count)
++                }
++                let amountString = presentationStringsFormattedNumber(Int32(clamping: finalPrice), presentationData.dateTimeFormat.groupingSeparator)
+                 let buttonTitle = isSelfGift ? environment.strings.Gift_Send_Buy : environment.strings.Gift_Send_Send
+                 buttonString = "\(buttonTitle)  # \(amountString)"
+                 if let availability = starGift.availability, availability.remains == 0 {
 diff --git a/submodules/TelegramUI/Components/Gifts/GiftViewScreen/Sources/GiftViewScreen.swift b/submodules/TelegramUI/Components/Gifts/GiftViewScreen/Sources/GiftViewScreen.swift
-index 1a5228a9..9279143b 100644
+index 1a5228a9..d2f687f6 100644
 --- a/submodules/TelegramUI/Components/Gifts/GiftViewScreen/Sources/GiftViewScreen.swift
 +++ b/submodules/TelegramUI/Components/Gifts/GiftViewScreen/Sources/GiftViewScreen.swift
 @@ -1538,6 +1538,10 @@ private final class GiftViewSheetContent: CombinedComponent {
@@ -6821,6 +7308,94 @@ index 1a5228a9..9279143b 100644
                  let strings = presentationData.strings
                  
                  if let reference = arguments.reference, case .unique = arguments.gift, let togglePinnedToTop = controller.togglePinnedToTop, let pinnedToTop = arguments.pinnedToTop {
+@@ -1585,6 +1589,18 @@ private final class GiftViewSheetContent: CombinedComponent {
+                     controller?.present(UndoOverlayController(presentationData: presentationData, content: .linkCopied(title: nil, text: presentationData.strings.Conversation_LinkCopied), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .current)
+                 })))
+                 
++                if PatchClientPolicy.isEnabled(.giftEmbed) {
++                    items.append(.action(ContextMenuActionItem(text: FaithgramPreferences.interfaceText("Copy embed code"), icon: { theme in
++                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Copy"), color: theme.contextMenu.primaryColor)
++                    }, action: { [weak controller] c, _ in
++                        c?.dismiss(completion: nil)
++                        
++                        UIPasteboard.general.string = "<iframe src=\"\(link)?embed=1\" width=\"100%\" height=\"420\" frameborder=\"0\" scrolling=\"no\" style=\"border: none; overflow: hidden;\"></iframe>"
++                        
++                        controller?.present(UndoOverlayController(presentationData: presentationData, content: .copy(text: FaithgramPreferences.interfaceText("Embed code copied.")), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .current)
++                    })))
++                }
++                
+                 items.append(.action(ContextMenuActionItem(text: presentationData.strings.Gift_View_Context_Share, icon: { theme in
+                     return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Forward"), color: theme.contextMenu.primaryColor)
+                 }, action: { [weak self] c, _ in
+@@ -1928,6 +1944,8 @@ private final class GiftViewSheetContent: CombinedComponent {
+             )
+         }
+         
++        private var faithgramUpgradeConfirmed = false
++        
+         func skipAnimation() {
+             guard let arguments = self.subject.arguments, case let .unique(uniqueGift) = arguments.gift else {
+                 return
+@@ -1942,6 +1960,14 @@ private final class GiftViewSheetContent: CombinedComponent {
+         }
+         
+         func commitUpgrade() {
++            if !self.faithgramUpgradeConfirmed, PatchClientPolicy.isEnabled(.giftActions2FA) {
++                FaithgramPasswordGate.confirm(context: self.context, title: FaithgramPreferences.interfaceText("Confirm upgrade")) { [weak self] in
++                    self?.faithgramUpgradeConfirmed = true
++                    self?.commitUpgrade()
++                }
++                return
++            }
++            self.faithgramUpgradeConfirmed = false
+             let duration = Double.random(in: 0.85 ..< 2.25)
+             let firstFraction = Double.random(in: 0.2 ..< 0.4)
+             let secondFraction = Double.random(in: 0.2 ..< 0.4)
+@@ -2055,6 +2081,20 @@ private final class GiftViewSheetContent: CombinedComponent {
+                     self.justUpgraded = true
+                     self.revealedNumberDigits = -1
+                     
++                    if PatchClientPolicy.isEnabled(.skipUpgradeRolling) {
++                        if case let .unique(uniqueGift) = result.gift {
++                            self.revealedNumberDigits = "\(uniqueGift.number)".count
++                        }
++                        self.revealedAttributes.insert(.backdrop)
++                        self.revealedAttributes.insert(.pattern)
++                        self.revealedAttributes.insert(.model)
++                        self.canSkip = false
++                        Queue.mainQueue().after(0.3) {
++                            if let controller = self.getController() as? GiftViewScreen {
++                                controller.animateSuccess()
++                            }
++                        }
++                    } else {
+                     if case let .unique(uniqueGift) = result.gift {
+                         for i in 0 ..< "\(uniqueGift.number)".count {
+                             Queue.mainQueue().after(0.2 + Double(i) * 0.3) {
+@@ -2089,6 +2129,7 @@ private final class GiftViewSheetContent: CombinedComponent {
+                             }
+                         }
+                     }
++                    }
+                     
+                     self.subject = .profileGift(peerId, result)
+                     self.updated(transition: .spring(duration: 0.4))
+@@ -4392,6 +4433,15 @@ private final class GiftViewSheetContent: CombinedComponent {
+                         }
+                     }
+                     
++                    if PatchClientPolicy.isEnabled(.showGiftIds) {
++                        tableItems.insert(.init(
++                            id: "giftId",
++                            title: FaithgramPreferences.interfaceText("Gift id"),
++                            component: AnyComponent(
++                                MultilineTextComponent(text: .plain(NSAttributedString(string: "\(uniqueGift.id)", font: tableFont, textColor: tableTextColor)))
++                            )
++                        ), at: hasOriginalInfo ? tableItems.count - 1 : tableItems.count)
++                    }
+                     let issuedString = presentationStringsFormattedNumber(uniqueGift.availability.issued, environment.dateTimeFormat.groupingSeparator)
+                     let totalString = presentationStringsFormattedNumber(uniqueGift.availability.total, environment.dateTimeFormat.groupingSeparator)
+                     tableItems.insert(.init(
 diff --git a/submodules/TelegramUI/Components/GlobalControlPanelsContext/Sources/GlobalControlPanelsContext.swift b/submodules/TelegramUI/Components/GlobalControlPanelsContext/Sources/GlobalControlPanelsContext.swift
 index 51a4d2a5..8249d18a 100644
 --- a/submodules/TelegramUI/Components/GlobalControlPanelsContext/Sources/GlobalControlPanelsContext.swift
@@ -7566,7 +8141,7 @@ index 4d971fd3..27c8ddba 100644
              if isPremium {
                  return .single(AudioTranscription.TrialState(cooldownUntilTime: nil, remainingCount: 1))
 diff --git a/submodules/TelegramUI/Sources/AppDelegate.swift b/submodules/TelegramUI/Sources/AppDelegate.swift
-index b1ea96b8..dec6fd7c 100644
+index b1ea96b8..ea6cf84d 100644
 --- a/submodules/TelegramUI/Sources/AppDelegate.swift
 +++ b/submodules/TelegramUI/Sources/AppDelegate.swift
 @@ -290,7 +290,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
@@ -7656,17 +8231,18 @@ index b1ea96b8..dec6fd7c 100644
          let _ = (self.sharedContextPromise.get()
          |> take(1)
          |> deliverOnMainQueue).start(next: { sharedApplicationContext in
-@@ -2003,6 +2011,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+@@ -2003,6 +2011,10 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
      }
  
      func applicationDidBecomeActive(_ application: UIApplication) {
 +        FaithgramPrivacyUI.shared.configure(window: self.window, action: { [weak self] in self?.performFaithgramAction($0) })
++        FaithgramIslandOverlay.shared.attach(window: self.window)
 +        if #available(iOS 16.2, *) { FaithgramActivityManager.shared.setActive(true) }
 +        FaithgramBadgeService.shared.setForeground(true)
          self.isInForegroundValue = true
          self.isInForegroundPromise.set(true)
          self.isActiveValue = true
-@@ -2712,6 +2723,11 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+@@ -2712,6 +2724,11 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
      
      @available(iOS 9.0, *)
      func application(_ application: UIApplication, performActionFor shortcutItem: UIApplicationShortcutItem, completionHandler: @escaping (Bool) -> Void) {
@@ -7678,7 +8254,7 @@ index b1ea96b8..dec6fd7c 100644
          let _ = (self.sharedContextPromise.get()
          |> take(1)
          |> deliverOnMainQueue).start(next: { sharedContext in
-@@ -2754,6 +2770,38 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+@@ -2754,6 +2771,38 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
          })
      }
      
@@ -7865,10 +8441,10 @@ index 07cef5bb..a0c56203 100644
  }
 diff --git a/submodules/TelegramUI/Sources/FaithgramActivityManager.swift b/submodules/TelegramUI/Sources/FaithgramActivityManager.swift
 new file mode 100644
-index 00000000..7eaaa9f1
+index 00000000..c6b8ce5d
 --- /dev/null
 +++ b/submodules/TelegramUI/Sources/FaithgramActivityManager.swift
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,96 @@
 +import Foundation
 +import UIKit
 +import ActivityKit
@@ -7945,8 +8521,13 @@ index 00000000..7eaaa9f1
 +            }
 +        } else if isForeground {
 +            do {
-+                let _ = try Activity.request(attributes: FaithgramActivityAttributes(), content: content, pushType: nil)
++                let activity = try Activity.request(attributes: FaithgramActivityAttributes(), content: content, pushType: nil)
 +                status("running · check Dynamic Island or the Lock Screen")
++                Task { @MainActor [weak self] in
++                    for await state in activity.activityStateUpdates {
++                        self?.status("system state: \(state) · id \(activity.id.prefix(8))")
++                    }
++                }
 +            } catch {
 +                let failure = error as NSError
 +                status("could not start", error: "\(failure.localizedDescription) (\(failure.domain): \(failure.code)). Check Live Activities permissions and the signed extension.")
@@ -8015,6 +8596,88 @@ index 00000000..d81dcb64
 +        }
 +        if let last = result.last, case .separator = last { result.removeLast() }
 +        return result
++    }
++}
+diff --git a/submodules/TelegramUI/Sources/FaithgramIslandOverlay.swift b/submodules/TelegramUI/Sources/FaithgramIslandOverlay.swift
+new file mode 100644
+index 00000000..9317c5a9
+--- /dev/null
++++ b/submodules/TelegramUI/Sources/FaithgramIslandOverlay.swift
+@@ -0,0 +1,76 @@
++import Foundation
++import UIKit
++import TelegramCore
++
++/// Draws a small capsule with the app icon and name over the Dynamic Island area while the app is on screen.
++/// iOS hides an app's own Live Activity in the island while that app is in the foreground, so this keeps the
++/// badge visible in the app itself and in screenshots.
++final class FaithgramIslandOverlay {
++    static let shared = FaithgramIslandOverlay()
++    private weak var window: UIWindow?
++    private var pill: UIView?
++    private var observers: [NSObjectProtocol] = []
++
++    private init() {
++        observers.append(NotificationCenter.default.addObserver(forName: FaithgramPreferences.changed, object: nil, queue: .main) { [weak self] _ in self?.refresh() })
++        observers.append(NotificationCenter.default.addObserver(forName: UIDevice.orientationDidChangeNotification, object: nil, queue: .main) { [weak self] _ in self?.refresh() })
++    }
++    deinit { observers.forEach { NotificationCenter.default.removeObserver($0) } }
++
++    func attach(window: UIWindow?) {
++        self.window = window
++        self.refresh()
++    }
++
++    /// Phones with a Dynamic Island report a top safe-area inset of 59 points or more.
++    private var hasIsland: Bool {
++        guard let window = self.window, UIDevice.current.userInterfaceIdiom == .phone else { return false }
++        return window.safeAreaInsets.top >= 59.0 && window.bounds.width < window.bounds.height
++    }
++
++    func refresh() {
++        guard PatchClientPolicy.isEnabled(.dynamicIsland), PatchClientPolicy.isEnabled(.islandBadge), self.hasIsland, let window = self.window else {
++            self.pill?.removeFromSuperview()
++            self.pill = nil
++            return
++        }
++        let pill = self.pill ?? self.makePill()
++        self.pill = pill
++        let top = window.safeAreaInsets.top - 48.0
++        pill.frame = CGRect(x: floor((window.bounds.width - pill.bounds.width) / 2.0), y: top, width: pill.bounds.width, height: pill.bounds.height)
++        if pill.superview !== window { window.addSubview(pill) }
++        window.bringSubviewToFront(pill)
++    }
++
++    private func makePill() -> UIView {
++        let height: CGFloat = 37.0
++        let label = UILabel()
++        label.text = FaithgramPreferences.interfaceText("faithgram")
++        label.font = UIFont.systemFont(ofSize: 13.0, weight: .semibold)
++        label.textColor = .white
++        label.sizeToFit()
++        let iconSize: CGFloat = 22.0
++        let padding: CGFloat = 12.0
++        let spacing: CGFloat = 6.0
++        let width = padding + iconSize + spacing + ceil(label.bounds.width) + padding
++        let view = UIView(frame: CGRect(x: 0.0, y: 0.0, width: width, height: height))
++        view.backgroundColor = .black
++        view.layer.cornerRadius = height / 2.0
++        view.layer.cornerCurve = .continuous
++        view.isUserInteractionEnabled = false
++        view.isAccessibilityElement = false
++        let icon = UIImageView(frame: CGRect(x: padding, y: (height - iconSize) / 2.0, width: iconSize, height: iconSize))
++        if let path = Bundle.main.path(forResource: "FaithgramIcon", ofType: "png"), let image = UIImage(contentsOfFile: path) {
++            icon.image = image
++        } else {
++            icon.image = UIImage(systemName: "paperplane.fill")?.withTintColor(.white, renderingMode: .alwaysOriginal)
++        }
++        icon.contentMode = .scaleAspectFit
++        icon.layer.cornerRadius = 5.0
++        icon.clipsToBounds = true
++        view.addSubview(icon)
++        label.frame = CGRect(x: padding + iconSize + spacing, y: floor((height - label.bounds.height) / 2.0), width: ceil(label.bounds.width), height: label.bounds.height)
++        view.addSubview(label)
++        return view
 +    }
 +}
 diff --git a/submodules/TelegramUI/Sources/FaithgramMessageShot.swift b/submodules/TelegramUI/Sources/FaithgramMessageShot.swift
@@ -8169,7 +8832,7 @@ index 00000000..c40e6c94
 +    }
 +}
 diff --git a/submodules/TelegramUI/Sources/SharedAccountContext.swift b/submodules/TelegramUI/Sources/SharedAccountContext.swift
-index 5637c9e3..b8bf3095 100644
+index 5637c9e3..1ff0822e 100644
 --- a/submodules/TelegramUI/Sources/SharedAccountContext.swift
 +++ b/submodules/TelegramUI/Sources/SharedAccountContext.swift
 @@ -2252,7 +2252,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
@@ -8181,7 +8844,39 @@ index 5637c9e3..b8bf3095 100644
      }
  
      public func makeDeviceContactInfoController(context: ShareControllerAccountContext, environment: ShareControllerEnvironment, subject: DeviceContactInfoSubject, completed: (() -> Void)?, cancelled: (() -> Void)?) -> ViewController {
-@@ -3570,7 +3570,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
+@@ -3314,12 +3314,18 @@ public final class SharedAccountContextImpl: SharedAccountContext {
+         
+         let options = Promise<[PremiumGiftCodeOption]>()
+         options.set(context.engine.payments.premiumGiftCodeOptions(peerId: nil))
++        FaithgramGiftRecipients.extra = []
++        var faithgramMultipleSelection: ContactSelectionControllerParams.MultipleSelectionMode = .disabled
++        if PatchClientPolicy.isEnabled(.giftChooseUsers), case .settings = source {
++            faithgramMultipleSelection = .possible
++        }
+         let controller = context.sharedContext.makeContactSelectionController(ContactSelectionControllerParams(
+             context: context,
+             mode: mode,
+             autoDismiss: false,
+             title: { _ in return title },
+             options: contactOptions,
++            multipleSelection: faithgramMultipleSelection,
+             allowChannelsInSearch: allowChannelsInSearch,
+             openProfile: { peer in
+                 openProfileImpl?(peer)
+@@ -3336,6 +3342,12 @@ public final class SharedAccountContextImpl: SharedAccountContext {
+             options.get() |> distinctUntilChanged
+         )).startStandalone(next: { [weak controller] result, options in
+             if let (peers, _, _, _, _, _) = result, let contactPeer = peers.first, case let .peer(peer, _, _) = contactPeer, let starsContext = context.starsContext {
++                FaithgramGiftRecipients.extra = peers.dropFirst().compactMap { item -> EnginePeer.Id? in
++                    if case let .peer(extraPeer, _, _) = item {
++                        return extraPeer.id
++                    }
++                    return nil
++                }
+                 if case .starGiftTransfer = source {
+                     presentTransferAlertImpl?(peer)
+                 } else {
+@@ -3570,7 +3582,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                          }
                      }
                      

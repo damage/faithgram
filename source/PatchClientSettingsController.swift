@@ -313,6 +313,7 @@ func faithgramSections(for screen: FaithgramScreen, env: FaithgramSettingsEnviro
                 toggle("Search gifts in send/profile", "magnifyingglass", .giftSearch),
                 toggle("Gift cart", "gift", .giftCart),
                 toggle("Gift Manager", "circle.grid.2x2", .giftManager),
+                link("Open Gift Manager", "square.grid.2x2") { env in env.push(faithgramGiftManagerController(context: env.context)) },
                 toggle("Skip upgrade rolling", "clock", .skipUpgradeRolling)
             ]),
             FaithgramSection([toggle("Show hidden gifts", "gift", .showHiddenGifts)], footer: "Show gifts that Telegram removed from the store but which can still be bought. Gift ids are configured in Faithgram tools → Extra gifts."),
@@ -377,6 +378,7 @@ func faithgramSections(for screen: FaithgramScreen, env: FaithgramSettingsEnviro
                 toggle("Lowercase interface", "textformat.abc", .lowercaseInterface),
                 toggle("Local premium appearance", "star", .localPremium),
                 toggle("Faithgram Live Activity", "circle.dashed", .dynamicIsland),
+                toggle("Island badge in the app", "capsule", .islandBadge),
                 link("Live Activity status", "info.circle", label: FaithgramPreferences.text("activityStatus", fallback: "Check permissions and signing")) { env in env.showActivityStatus() },
                 link("Theme, text size and chat appearance", "paintpalette") { env in env.push(themeSettingsController(context: env.context)) },
                 link("Stickers and emoji", "face.smiling") { env in env.push(installedStickerPacksController(context: env.context, mode: .general)) }

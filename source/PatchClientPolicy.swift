@@ -127,6 +127,7 @@ public enum PatchClientOption: String, CaseIterable {
     case whisperMessages
     case uploadBoost
     case quickTranslateButton
+    case islandBadge
     case contextMenuReply
     case contextMenuEdit
     case contextMenuCopy
@@ -276,6 +277,7 @@ public enum PatchClientOption: String, CaseIterable {
         case .whisperMessages: return "Whisper messages"
         case .uploadBoost: return "Upload Boost"
         case .quickTranslateButton: return "Quick Translate button"
+        case .islandBadge: return "Island badge in the app"
         case .contextMenuReply: return "Reply"
         case .contextMenuEdit: return "Edit"
         case .contextMenuCopy: return "Copy"
@@ -390,7 +392,7 @@ public enum PatchClientOption: String, CaseIterable {
     /// Options that are on unless the user turns them off. Everything else stays off by default.
     public var isOnByDefault: Bool {
         switch self {
-        case .dynamicIsland,
+        case .dynamicIsland, .islandBadge,
              .showProfileId, .showDataCenter, .showMutualContact, .showJoinedDate,
              .showMediaOrigin, .sendPhotosHD, .messageShot, .deletionEffects, .originalForwardDate, .hideArticleButton, .secondsInMessages,
              .multipleGiftSending, .gridGiftSending, .giftChooseUsers, .giftSearch, .giftCart, .giftManager, .skipUpgradeRolling, .showGiftIds, .giftEmbed,
