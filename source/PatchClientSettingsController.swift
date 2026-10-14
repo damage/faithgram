@@ -334,7 +334,7 @@ func faithgramSections(for screen: FaithgramScreen, env: FaithgramSettingsEnviro
                 toggle("Search Button", "magnifyingglass", .tabSearchButton),
                 toggle("Wide Tab bar", "rectangle.bottomhalf.inset.filled", .wideTabBar),
                 page("Notifications Badge", "exclamationmark.circle", .choice(FaithgramChoices.tabsBadge))
-            ]),
+            ], footer: "With the tab bar hidden, swipe up with three fingers anywhere to bring it back."),
             FaithgramSection("Chat folders", [
                 toggle("Folders at Bottom", "arrow.down", .foldersAtBottom),
                 toggle("Hide \"All Chats\"", "eye.slash", .hideAllChats),

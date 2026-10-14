@@ -278,7 +278,7 @@ index 00000000..5d626926
 +    }
 +}
 diff --git a/submodules/ChatListUI/Sources/ChatListController.swift b/submodules/ChatListUI/Sources/ChatListController.swift
-index eafe9575..c6d327a9 100644
+index eafe9575..61f376e6 100644
 --- a/submodules/ChatListUI/Sources/ChatListController.swift
 +++ b/submodules/ChatListUI/Sources/ChatListController.swift
 @@ -745,6 +745,11 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
@@ -364,7 +364,33 @@ index eafe9575..c6d327a9 100644
              if strongSelf.chatListDisplayNode.mainContainerNode.currentItemNode.chatListFilter?.id == updatedFilter?.id {
                  strongSelf.scrollToTop?()
              } else {
-@@ -6605,6 +6622,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
+@@ -4330,11 +4347,25 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
+         }))
+     }
+     
++    private var faithgramStoryConfirmed = false
++    
+     public func openStories(peerId: EnginePeer.Id) {
+         self.openStories(peerId: peerId, completion: { _ in })
+     }
+     
+     public func openStories(peerId: EnginePeer.Id, completion: @escaping (StoryContainerScreen) -> Void = { _ in }) {
++        if PatchClientPolicy.isEnabled(.warnBeforeStoryView), !self.faithgramStoryConfirmed, peerId != self.context.account.peerId {
++            let alert = UIAlertController(title: FaithgramPreferences.interfaceText("View story?"), message: FaithgramPreferences.interfaceText("The author will see that you viewed it unless Ghost mode or a chat rule hides your views."), preferredStyle: .alert)
++            alert.addAction(UIAlertAction(title: self.presentationData.strings.Common_Cancel, style: .cancel))
++            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("View"), style: .default, handler: { [weak self] _ in
++                guard let self else { return }
++                self.faithgramStoryConfirmed = true
++                self.openStories(peerId: peerId, completion: completion)
++            }))
++            self.context.sharedContext.mainWindow?.presentNative(alert)
++            return
++        }
++        self.faithgramStoryConfirmed = false
+         if let navigationBarView = self.chatListDisplayNode.navigationBarView.view as? ChatListNavigationBar.View {
+             if navigationBarView.storiesUnlocked {
+                 self.shouldFixStorySubscriptionOrder = true
+@@ -6605,6 +6636,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
          return self.storyCameraTransitionInCoordinator != nil
      }
      func storyCameraPanGestureChanged(transitionFraction: CGFloat) {
@@ -1755,7 +1781,7 @@ index 00000000..d80a8954
 +}
 diff --git a/submodules/SettingsUI/Sources/PatchClientSettingsController.swift b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
 new file mode 100644
-index 00000000..6014ca51
+index 00000000..8bce92ce
 --- /dev/null
 +++ b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
 @@ -0,0 +1,857 @@
@@ -2095,7 +2121,7 @@ index 00000000..6014ca51
 +                toggle("Search Button", "magnifyingglass", .tabSearchButton),
 +                toggle("Wide Tab bar", "rectangle.bottomhalf.inset.filled", .wideTabBar),
 +                page("Notifications Badge", "exclamationmark.circle", .choice(FaithgramChoices.tabsBadge))
-+            ]),
++            ], footer: "With the tab bar hidden, swipe up with three fingers anywhere to bring it back."),
 +            FaithgramSection("Chat folders", [
 +                toggle("Folders at Bottom", "arrow.down", .foldersAtBottom),
 +                toggle("Hide \"All Chats\"", "eye.slash", .hideAllChats),
@@ -2616,6 +2642,71 @@ index 00000000..6014ca51
 +public func patchClientSettingsController(context: AccountContext) -> ViewController {
 +    return faithgramScreenController(context: context, screen: .root)
 +}
+diff --git a/submodules/TelegramCallsUI/Sources/PresentationCallManager.swift b/submodules/TelegramCallsUI/Sources/PresentationCallManager.swift
+index 6d7cd2b9..c8ad301f 100644
+--- a/submodules/TelegramCallsUI/Sources/PresentationCallManager.swift
++++ b/submodules/TelegramCallsUI/Sources/PresentationCallManager.swift
+@@ -1,4 +1,5 @@
+ import Foundation
++import UIKit
+ import AsyncDisplayKit
+ import Postbox
+ import TelegramCore
+@@ -47,6 +48,7 @@ private enum CurrentCall {
+ 
+ public final class PresentationCallManagerImpl: PresentationCallManager {
+     private let getDeviceAccessData: () -> (presentationData: PresentationData, present: (ViewController, Any?) -> Void, openSettings: () -> Void)
++    private var faithgramCallConfirmed = false
+     private let isMediaPlaying: () -> Bool
+     private let resumeMediaPlayback: () -> Void
+ 
+@@ -360,7 +362,7 @@ public final class PresentationCallManagerImpl: PresentationCallManager {
+                         startWithVideo: firstState.2.isVideo,
+                         isVideoPossible: firstState.2.isVideoPossible,
+                         enableStunMarking: shouldEnableStunMarking(appConfiguration: appConfiguration),
+-                        enableTCP: experimentalSettings.enableVoipTcp,
++                        enableTCP: experimentalSettings.enableVoipTcp || PatchClientPolicy.isEnabled(.forceTCPCalls),
+                         preferredVideoCodec: experimentalSettings.preferredVideoCodec
+                     )
+                     strongSelf.updateCurrentCall(call)
+@@ -409,7 +411,7 @@ public final class PresentationCallManagerImpl: PresentationCallManager {
+                         startWithVideo: firstState.2.isVideo,
+                         isVideoPossible: firstState.2.isVideoPossible,
+                         enableStunMarking: shouldEnableStunMarking(appConfiguration: appConfiguration),
+-                        enableTCP: experimentalSettings.enableVoipTcp,
++                        enableTCP: experimentalSettings.enableVoipTcp || PatchClientPolicy.isEnabled(.forceTCPCalls),
+                         preferredVideoCodec: experimentalSettings.preferredVideoCodec
+                     )
+                     strongSelf.updateCurrentCall(call)
+@@ -428,6 +430,19 @@ public final class PresentationCallManagerImpl: PresentationCallManager {
+     }
+     
+     public func requestCall(context: AccountContext, peerId: PeerId, isVideo: Bool, endCurrentIfAny: Bool) -> RequestCallResult {
++        if PatchClientPolicy.isEnabled(.callConfirmation), !self.faithgramCallConfirmed {
++            let (presentationData, _, _) = self.getDeviceAccessData()
++            let alert = UIAlertController(title: FaithgramPreferences.interfaceText(isVideo ? "Start video call?" : "Start call?"), message: nil, preferredStyle: .alert)
++            alert.addAction(UIAlertAction(title: presentationData.strings.Common_Cancel, style: .cancel))
++            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Call"), style: .default, handler: { [weak self] _ in
++                guard let self else { return }
++                self.faithgramCallConfirmed = true
++                let _ = self.requestCall(context: context, peerId: peerId, isVideo: isVideo, endCurrentIfAny: endCurrentIfAny)
++            }))
++            context.sharedContext.mainWindow?.presentNative(alert)
++            return .requested
++        }
++        self.faithgramCallConfirmed = false
+         var alreadyInCallType: CallAlreadyInProgressType?
+         
+         if let call = self.currentCall {
+@@ -680,7 +695,7 @@ public final class PresentationCallManagerImpl: PresentationCallManager {
+                         startWithVideo: isVideo,
+                         isVideoPossible: isVideoPossible,
+                         enableStunMarking: shouldEnableStunMarking(appConfiguration: appConfiguration),
+-                        enableTCP: experimentalSettings.enableVoipTcp,
++                        enableTCP: experimentalSettings.enableVoipTcp || PatchClientPolicy.isEnabled(.forceTCPCalls),
+                         preferredVideoCodec: experimentalSettings.preferredVideoCodec
+                     )
+                     strongSelf.updateCurrentCall(call)
 diff --git a/submodules/TelegramCore/Sources/Account/Account.swift b/submodules/TelegramCore/Sources/Account/Account.swift
 index ffff9140..7a0e20ea 100644
 --- a/submodules/TelegramCore/Sources/Account/Account.swift
@@ -8305,6 +8396,19 @@ index 8de49d0f..01e71805 100644
          self.interfaceInteraction = interfaceInteraction
          
          if let search = self.focusOnSearchAfterAppearance {
+diff --git a/submodules/TelegramUI/Sources/Chat/ChatControllerOpenMessageContextMenu.swift b/submodules/TelegramUI/Sources/Chat/ChatControllerOpenMessageContextMenu.swift
+index e6eff30b..face2513 100644
+--- a/submodules/TelegramUI/Sources/Chat/ChatControllerOpenMessageContextMenu.swift
++++ b/submodules/TelegramUI/Sources/Chat/ChatControllerOpenMessageContextMenu.swift
+@@ -128,7 +128,7 @@ extension ChatControllerImpl {
+                 actions.context = self.context
+                 actions.animationCache = self.controllerInteraction?.presentationContext.animationCache
+                                                          
+-                if canAddMessageReactions(message: EngineMessage(topMessage)), let allowedReactions = allowedReactions, !topReactions.isEmpty {
++                if canAddMessageReactions(message: EngineMessage(topMessage)), let allowedReactions = allowedReactions, !topReactions.isEmpty, !PatchClientPolicy.isEnabled(.hideSuggestedReactions) {
+                     actions.reactionItems = topReactions.map { ReactionContextItem.reaction(item: $0, icon: .none) }
+                     actions.selectedReactionItems = selectedReactions.reactions
+                     if message.areReactionsTags(accountPeerId: self.context.account.peerId) {
 diff --git a/submodules/TelegramUI/Sources/ChatControllerOpenMessageReactionContextMenu.swift b/submodules/TelegramUI/Sources/ChatControllerOpenMessageReactionContextMenu.swift
 index 3f47be58..aba27811 100644
 --- a/submodules/TelegramUI/Sources/ChatControllerOpenMessageReactionContextMenu.swift
@@ -8750,10 +8854,10 @@ index 00000000..b25e9386
 +}
 diff --git a/submodules/TelegramUI/Sources/FaithgramPrivacyUI.swift b/submodules/TelegramUI/Sources/FaithgramPrivacyUI.swift
 new file mode 100644
-index 00000000..c40e6c94
+index 00000000..638c15c8
 --- /dev/null
 +++ b/submodules/TelegramUI/Sources/FaithgramPrivacyUI.swift
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,82 @@
 +import Foundation
 +import UIKit
 +import TelegramCore
@@ -8814,7 +8918,7 @@ index 00000000..c40e6c94
 +    }
 +    func showPreview() { cover?.removeFromSuperview(); cover = nil }
 +    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-+        guard PatchClientPolicy.isEnabled(.customGestures), UIApplication.shared.applicationState == .active else { return false }
++        guard PatchClientPolicy.isEnabled(.customGestures) || PatchClientPolicy.isEnabled(.hideTabBar), UIApplication.shared.applicationState == .active else { return false }
 +        var target = touch.view
 +        while let view = target {
 +            if view is UITextInput { return false }
@@ -8824,8 +8928,13 @@ index 00000000..c40e6c94
 +    }
 +    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { return true }
 +    @objc private func swiped(_ recognizer: UISwipeGestureRecognizer) {
-+        guard recognizer.state == .ended, PatchClientPolicy.isEnabled(.customGestures) else { return }
++        guard recognizer.state == .ended else { return }
 +        let direction = recognizer.direction == .up ? "up" : "down"
++        if PatchClientPolicy.isEnabled(.hideTabBar), direction == "up" {
++            PatchClientPolicy.setEnabled(.hideTabBar, false)
++            return
++        }
++        guard PatchClientPolicy.isEnabled(.customGestures) else { return }
 +        let fallback = direction == "up" ? "profiles" : "ghost"
 +        let value = FaithgramPreferences.text("gesture." + direction, fallback: fallback)
 +        if value != "none" { action?(value) }
@@ -8885,6 +8994,82 @@ index 5637c9e3..1ff0822e 100644
                          if starsState.balance < StarsAmount(value: transferStars, nanos: 0) {
                              let _ = (optionsPromise.get()
                              |> filter { $0 != nil }
+diff --git a/submodules/TelegramUI/Sources/TelegramRootController.swift b/submodules/TelegramUI/Sources/TelegramRootController.swift
+index c5ea2111..f76717ec 100644
+--- a/submodules/TelegramUI/Sources/TelegramRootController.swift
++++ b/submodules/TelegramUI/Sources/TelegramRootController.swift
+@@ -76,6 +76,8 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
+     public var rootTabController: TabBarController?
+     
+     public var contactsController: ContactsController?
++    private var faithgramShowCallsTab = false
++    private var faithgramObserver: NSObjectProtocol?
+     public var callListController: CallListController?
+     public var chatListController: ChatListController?
+     public var accountSettingsController: PeerInfoScreen?
+@@ -213,12 +215,21 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
+         contactsController.switchToChatsController = {  [weak self] in
+             self?.openChatsController(activateSearch: false)
+         }
+-        controllers.append(contactsController)
++        if PatchClientPolicy.isEnabled(.showContactsTab) {
++            controllers.append(contactsController)
++        }
+         
+-        if showCallsTab {
++        if showCallsTab || PatchClientPolicy.isEnabled(.showCallsTab) {
+             controllers.append(callListController)
+         }
+         controllers.append(chatListController)
++        self.faithgramShowCallsTab = showCallsTab
++        if self.faithgramObserver == nil {
++            self.faithgramObserver = NotificationCenter.default.addObserver(forName: FaithgramPreferences.changed, object: nil, queue: .main, using: { [weak self] _ in
++                guard let self else { return }
++                self.updateRootControllers(showCallsTab: self.faithgramShowCallsTab)
++            })
++        }
+         
+         var restoreSettignsController: (ViewController & SettingsController)?
+         if let sharedContext = self.context.sharedContext as? SharedAccountContextImpl {
+@@ -240,6 +251,7 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
+         controllers.append(accountSettingsController)
+                 
+         tabBarController.setControllers(controllers, selectedIndex: restoreSettignsController != nil ? (controllers.count - 1) : (controllers.count - 2))
++        self.faithgramApplyTabPreferences(tabBarController, controllers: controllers)
+         
+         self.contactsController = contactsController
+         self.callListController = callListController
+@@ -253,15 +265,28 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
+         guard let rootTabController = self.rootTabController as? TabBarControllerImpl else {
+             return
+         }
++        self.faithgramShowCallsTab = showCallsTab
+         var controllers: [ViewController] = []
+-        controllers.append(self.contactsController!)
+-        if showCallsTab {
++        if PatchClientPolicy.isEnabled(.showContactsTab) {
++            controllers.append(self.contactsController!)
++        }
++        if showCallsTab || PatchClientPolicy.isEnabled(.showCallsTab) {
+             controllers.append(self.callListController!)
+         }
+         controllers.append(self.chatListController!)
+         controllers.append(self.accountSettingsController!)
+         
+         rootTabController.setControllers(controllers, selectedIndex: nil)
++        self.faithgramApplyTabPreferences(rootTabController, controllers: controllers)
++    }
++    
++    private func faithgramApplyTabPreferences(_ tabBarController: TabBarControllerImpl, controllers: [ViewController]) {
++        if !PatchClientPolicy.isEnabled(.showTabNames) {
++            for controller in controllers {
++                controller.tabBarItem.title = ""
++            }
++        }
++        tabBarController.updateIsTabBarHidden(PatchClientPolicy.isEnabled(.hideTabBar), transition: .animated(duration: 0.3, curve: .spring))
+     }
+     
+     public func openChatsController(activateSearch: Bool, filter: ChatListSearchFilter = .chats, query: String? = nil) {
 diff --git a/submodules/TelegramUI/Sources/TextLinkHandling.swift b/submodules/TelegramUI/Sources/TextLinkHandling.swift
 index de144e98..7317a677 100644
 --- a/submodules/TelegramUI/Sources/TextLinkHandling.swift

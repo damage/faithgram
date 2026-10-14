@@ -8,7 +8,7 @@
   },
   "patch": {
     "path": "patches/0001-local-policy.patch",
-    "sha256": "bd345692af3c581989bc99ff1c60e55e7018cb975da3ce58d808a75ead31e53d",
+    "sha256": "d45ef4e758ae15a5c71143d35f6693f354e52a052b310e89f80e8af7f80fa937",
     "files": [
       "Telegram/BUILD",
       "Telegram/FaithgramActivityWidget/FaithgramActivityWidget.swift",
@@ -33,6 +33,7 @@
       "submodules/SettingsUI/Sources/FaithgramSettingsBackupController.swift",
       "submodules/SettingsUI/Sources/FaithgramSettingsItems.swift",
       "submodules/SettingsUI/Sources/PatchClientSettingsController.swift",
+      "submodules/TelegramCallsUI/Sources/PresentationCallManager.swift",
       "submodules/TelegramCore/Sources/Account/Account.swift",
       "submodules/TelegramCore/Sources/Account/AccountManager.swift",
       "submodules/TelegramCore/Sources/ApiUtils/StoreMessage_Telegram.swift",
@@ -128,6 +129,7 @@
       "submodules/TelegramUI/Sources/AccountContext.swift",
       "submodules/TelegramUI/Sources/AppDelegate.swift",
       "submodules/TelegramUI/Sources/Chat/ChatControllerLoadDisplayNode.swift",
+      "submodules/TelegramUI/Sources/Chat/ChatControllerOpenMessageContextMenu.swift",
       "submodules/TelegramUI/Sources/ChatControllerOpenMessageReactionContextMenu.swift",
       "submodules/TelegramUI/Sources/ChatHistoryEntriesForView.swift",
       "submodules/TelegramUI/Sources/ChatHistoryListNode.swift",
@@ -138,6 +140,7 @@
       "submodules/TelegramUI/Sources/FaithgramMessageShot.swift",
       "submodules/TelegramUI/Sources/FaithgramPrivacyUI.swift",
       "submodules/TelegramUI/Sources/SharedAccountContext.swift",
+      "submodules/TelegramUI/Sources/TelegramRootController.swift",
       "submodules/TelegramUI/Sources/TextLinkHandling.swift",
       "submodules/TranslateUI/Sources/ChatTranslation.swift",
       "submodules/TranslateUI/Sources/Translate.swift"
