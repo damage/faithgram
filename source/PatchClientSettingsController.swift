@@ -221,6 +221,7 @@ func faithgramSections(for screen: FaithgramScreen, env: FaithgramSettingsEnviro
         return [
             FaithgramSection([link("Notifications", "bell") { env in env.push(notificationsAndSoundsController(context: env.context, exceptionsList: nil)) }]),
             FaithgramSection([toggle("Unlimited accounts", "infinity", .unlimitedAccounts)]),
+            FaithgramSection([toggle("Online alerts", "bell.badge", .onlineAlerts)], footer: "Hold a message in a private chat and choose Notify when online. Faithgram shows a notification when that person comes online while the app is running."),
             FaithgramSection("Profile info", [
                 toggle("Show Profile ID", "person.text.rectangle", .showProfileId),
                 toggle("Show Data Center", "server.rack", .showDataCenter),
@@ -261,7 +262,8 @@ func faithgramSections(for screen: FaithgramScreen, env: FaithgramSettingsEnviro
                 toggle("Hide Mention Notifications", "at", .hideMentionNotifications),
                 toggle("Original date of forwards", "clock", .originalForwardDate),
                 toggle("Hide Article Button", "viewfinder", .hideArticleButton),
-                toggle("Post as channel by default", "megaphone", .postAsChannelDefault)
+                toggle("Post as channel by default", "megaphone", .postAsChannelDefault),
+                toggle("Disable swipe to reply", "arrowshape.turn.up.left", .disableSwipeToReply)
             ]),
             FaithgramSection([
                 toggle("Disable spoilers for text", "eye.slash", .disableTextSpoilers),

@@ -11,7 +11,8 @@ settings open from a "faithgram" row above my profile.
 **accounts**
 - unlimited accounts
 - profile id, data center and mutual contact rows in profiles
-- hide phone, id and usernames in your own profile or in other people's profiles
+- hide phone, id and usernames in your own profile or in other people's profiles: remove the row or cover it with a spoiler
+- online alerts: get a notification when a chosen contact comes online
 - password-protected export and restore of logged-in sessions
 
 **messages**
@@ -20,22 +21,40 @@ settings open from a "faithgram" row above my profile.
 - downloaded media archive with per-chat rules
 - regex filters for messages, chat previews and notifications
 - shot: select messages and copy a picture of them to the clipboard
-- seconds in message timestamps
-- reaction and mention notification filters
+- seconds in message timestamps, original date of forwarded messages
+- message info: ids, dates, views, file details
+- double-tap to edit your own message, swipe to reply can be turned off
+- reactions can be hidden, reaction and mention notifications can be muted
+- spoilers in text and media can be shown right away, deletion effects can be turned off
+- post as your channel by default, send photos in hd by default
+- voice or round video on the record button, or both
 - context menu editor: turn off any item in the message menu and in the sticker menu, plus copy sticker id
 - formatting toolbar and quick translate button above the keyboard
 - on-device translation and voice transcription when the language is supported
-- custom fact-check text, copy protected content, no local expiry, callback data on long press, 200 recent stickers, no link warnings, no spoilers
+- calculator in the input field: type 12*(3+4)= and the result appears
+- whisper to someone in a group through @sottovoxbot
+- custom fact-check text, copy protected content, no local expiry, callback data on long press, 200 recent stickers, no link warnings
 
-**gifts and profile**
-- local overrides for your profile: phone, id, usernames, collectibles, verification, rating, balances
-- local overrides for regular and unique gifts, extra catalog entries, fake transfer preview
+**gifts**
+- send a gift several times in a row, pick the amount from a grid or type it
+- choose several recipients at once
+- search the gift catalog by name, price, id or number
+- gift manager: show, hide, pin and unpin all your gifts from one list
+- skip the upgrade animation, show gift ids, copy an embed code
+- ask for the cloud password before paid gift actions
+- local overrides for your profile, balances, regular and unique gifts, extra catalog entries, fake transfer preview
 - switches to hide premium, stars, gifts, boosts, paid reactions and emoji statuses
 
 **appearance**
-- folders at the bottom, hide all chats, remember the last folder
+- tabs: hide contacts, show calls, hide names, hide the whole bar (three-finger swipe up brings it back), pick which tabs show badges
+- folders at the bottom, hide all chats, rename all chats, hide folder badges, remember the last folder
+- sticker size and sticker timestamps, hide suggested reactions, hide the ai button in the input
+- round videos: start with the rear camera, lock the camera, 60 fps, 0.5x, keep music playing
+- camera tile and live preview in the gallery can be turned off
+- pull to next unread channel or topic can be turned off
+- fix invisible names, rank colors for owner, admin and member labels
 - lowercase interface (names, messages and links stay as they are)
-- live activity with the app name in the dynamic island
+- live activity and an island badge with the app name
 - local premium look
 
 **privacy**
@@ -45,7 +64,14 @@ settings open from a "faithgram" row above my profile.
 - three-finger gestures and home screen shortcuts for profiles, ghost and lock
 - encrypted settings backup, named settings profiles with shareable links
 
-a lot of the newer switches in gifts, appearance and misc are still being wired up.
+**misc**
+- stories: hide them, no swipe to record, ask before viewing, repost to story
+- calls: ask before calling, force tcp
+- links: look up the host, download a tiktok video, open x posts with a preview
+- upload boost and download boost
+- translation and voice-to-text through telegram or on the device
+
+still being wired up: gift cart, wide tab bar, recording microphone, voice pitch, round video hd, new and old design, story poster, joined date, screen-sharing cover.
 
 ## build
 

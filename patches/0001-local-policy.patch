@@ -1894,10 +1894,10 @@ index 00000000..d80a8954
 +}
 diff --git a/submodules/SettingsUI/Sources/PatchClientSettingsController.swift b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
 new file mode 100644
-index 00000000..7d765e90
+index 00000000..f6e3099e
 --- /dev/null
 +++ b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
-@@ -0,0 +1,857 @@
+@@ -0,0 +1,859 @@
 +import Foundation
 +import UIKit
 +import Display
@@ -2121,6 +2121,7 @@ index 00000000..7d765e90
 +        return [
 +            FaithgramSection([link("Notifications", "bell") { env in env.push(notificationsAndSoundsController(context: env.context, exceptionsList: nil)) }]),
 +            FaithgramSection([toggle("Unlimited accounts", "infinity", .unlimitedAccounts)]),
++            FaithgramSection([toggle("Online alerts", "bell.badge", .onlineAlerts)], footer: "Hold a message in a private chat and choose Notify when online. Faithgram shows a notification when that person comes online while the app is running."),
 +            FaithgramSection("Profile info", [
 +                toggle("Show Profile ID", "person.text.rectangle", .showProfileId),
 +                toggle("Show Data Center", "server.rack", .showDataCenter),
@@ -2161,7 +2162,8 @@ index 00000000..7d765e90
 +                toggle("Hide Mention Notifications", "at", .hideMentionNotifications),
 +                toggle("Original date of forwards", "clock", .originalForwardDate),
 +                toggle("Hide Article Button", "viewfinder", .hideArticleButton),
-+                toggle("Post as channel by default", "megaphone", .postAsChannelDefault)
++                toggle("Post as channel by default", "megaphone", .postAsChannelDefault),
++                toggle("Disable swipe to reply", "arrowshape.turn.up.left", .disableSwipeToReply)
 +            ]),
 +            FaithgramSection([
 +                toggle("Disable spoilers for text", "eye.slash", .disableTextSpoilers),
@@ -5406,10 +5408,10 @@ index 00000000..7398fa99
 +}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/PatchClientPolicy.swift b/submodules/TelegramCore/Sources/PatchClient/PatchClientPolicy.swift
 new file mode 100644
-index 00000000..6aa9fa00
+index 00000000..db985c3d
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/PatchClient/PatchClientPolicy.swift
-@@ -0,0 +1,486 @@
+@@ -0,0 +1,490 @@
 +import Foundation
 +import TelegramApi
 +
@@ -5540,6 +5542,8 @@ index 00000000..6aa9fa00
 +    case uploadBoost
 +    case quickTranslateButton
 +    case islandBadge
++    case disableSwipeToReply
++    case onlineAlerts
 +    case contextMenuReply
 +    case contextMenuEdit
 +    case contextMenuCopy
@@ -5690,6 +5694,8 @@ index 00000000..6aa9fa00
 +        case .uploadBoost: return "Upload Boost"
 +        case .quickTranslateButton: return "Quick Translate button"
 +        case .islandBadge: return "Island badge in the app"
++        case .disableSwipeToReply: return "Disable swipe to reply"
++        case .onlineAlerts: return "Online alerts"
 +        case .contextMenuReply: return "Reply"
 +        case .contextMenuEdit: return "Edit"
 +        case .contextMenuCopy: return "Copy"
@@ -6835,10 +6841,18 @@ index 4a26f877..c3ac95b9 100644
                              
                              node.addSubnode(buttonNode)
 diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift
-index 06d13699..2bf51d63 100644
+index 06d13699..398a3cc8 100644
 --- a/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift
 +++ b/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift
-@@ -832,7 +832,8 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
+@@ -319,6 +319,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
+         self.view.addGestureRecognizer(recognizer)
+         
+         let replyRecognizer = ChatSwipeToReplyRecognizer(target: self, action: #selector(self.swipeToReplyGesture(_:)))
++        replyRecognizer.isEnabled = !PatchClientPolicy.isEnabled(.disableSwipeToReply)
+         if let item = self.item {
+             let _ = item
+             replyRecognizer.allowBothDirections = false//!item.context.sharedContext.immediateExperimentalUISettings.unidirectionalSwipeToReply
+@@ -832,7 +833,8 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
      }
          
      override public func asyncLayout() -> (_ item: ChatMessageItem, _ params: ListViewItemLayoutParams, _ mergedTop: ChatMessageMerge, _ mergedBottom: ChatMessageMerge, _ dateHeaderAtBottom: ChatMessageHeaderSpec) -> (ListViewItemNodeLayout, (ListViewItemUpdateAnimation, ListViewItemApply, Bool) -> Void) {
@@ -6848,7 +6862,7 @@ index 06d13699..2bf51d63 100644
          let telegramFile = self.telegramFile
          let emojiFile = self.emojiFile
          let telegramDice = self.telegramDice
-@@ -1724,6 +1725,8 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
+@@ -1724,6 +1726,8 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
                      dateAndStatusApply(animation)
                      if case .customChatContents = item.associatedData.subject {
                          strongSelf.dateAndStatusNode.isHidden = true
@@ -6857,7 +6871,7 @@ index 06d13699..2bf51d63 100644
                      }
  
                      if needsReplyBackground {
-@@ -2205,6 +2208,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
+@@ -2205,6 +2209,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
      
      private var playedPremiumStickerAnimation = false
      func playPremiumStickerAnimation() {
@@ -6865,7 +6879,7 @@ index 06d13699..2bf51d63 100644
          guard !self.playedPremiumStickerAnimation, let item = self.item, let file = self.telegramFile, file.isPremiumSticker, let effect = file.videoThumbnails.first else {
              return
          }
-@@ -2222,6 +2226,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
+@@ -2222,6 +2227,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
      }
      
      public func playEffectAnimation(resource: MediaResource, isStickerEffect: Bool = false) {
@@ -6874,10 +6888,18 @@ index 06d13699..2bf51d63 100644
              return
          }
 diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift
-index 2dcfc95e..72352f7a 100644
+index 2dcfc95e..46ad3384 100644
 --- a/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift
 +++ b/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift
-@@ -2763,6 +2763,9 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
+@@ -1470,6 +1470,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
+         self.view.isExclusiveTouch = true
+ 
+         let replyRecognizer = ChatSwipeToReplyRecognizer(target: self, action: #selector(self.swipeToReplyGesture(_:)))
++        replyRecognizer.isEnabled = !PatchClientPolicy.isEnabled(.disableSwipeToReply)
+         if let item = self.item {
+             let _ = item
+             replyRecognizer.allowBothDirections = false//!item.context.sharedContext.immediateExperimentalUISettings.unidirectionalSwipeToReply
+@@ -2763,6 +2764,9 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                                  string = ""
                              }
                          }
@@ -6887,18 +6909,18 @@ index 2dcfc95e..72352f7a 100644
                          if !string.isEmpty {
                              rankBadgeString = NSAttributedString(string: "\(string)", font: inlineBotPrefixFont, textColor: rankBadgeColor ?? defaultRankColor)
                          }
-@@ -5751,7 +5754,9 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
+@@ -5751,7 +5755,9 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                  } else if case .tap = gesture {
                      item.controllerInteraction.clickThroughMessage(self.view, location)
                  } else if case .doubleTap = gesture {
 -                    if canAddMessageReactions(message: EngineMessage(item.message)) {
 +                    if PatchClientPolicy.isEnabled(.doubleTapEdit), !item.message.flags.contains(.Incoming), item.message.id.namespace == Namespaces.Message.Cloud, !item.message.text.isEmpty {
-+                        item.controllerInteraction.setupEditMessage(item.message.id, { _ in })
++                        item.controllerInteraction.faithgramEditMessage?(item.message.id)
 +                    } else if canAddMessageReactions(message: EngineMessage(item.message)) {
                          item.controllerInteraction.updateMessageReaction(item.message, .default, false, nil)
                      }
                  }
-@@ -7877,3 +7882,25 @@ public final class NameNavigateButton: HighlightableButton {
+@@ -7877,3 +7883,25 @@ public final class NameNavigateButton: HighlightableButton {
          }
      }
  }
@@ -6976,6 +6998,18 @@ index 98abd8ec..4837555d 100644
 +    guard let match = expression.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)), let range = Range(match.range, in: text) else { return text }
 +    return text.replacingCharacters(in: range, with: text[range] + ":" + seconds)
 +}
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageInstantVideoItemNode/Sources/ChatMessageInstantVideoItemNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageInstantVideoItemNode/Sources/ChatMessageInstantVideoItemNode.swift
+index f8c3faf6..1f769b15 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageInstantVideoItemNode/Sources/ChatMessageInstantVideoItemNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageInstantVideoItemNode/Sources/ChatMessageInstantVideoItemNode.swift
+@@ -211,6 +211,7 @@ public class ChatMessageInstantVideoItemNode: ChatMessageItemView, ASGestureReco
+         self.view.addGestureRecognizer(recognizer)
+         
+         let replyRecognizer = ChatSwipeToReplyRecognizer(target: self, action: #selector(self.swipeToReplyGesture(_:)))
++        replyRecognizer.isEnabled = !PatchClientPolicy.isEnabled(.disableSwipeToReply)
+         replyRecognizer.shouldBegin = { [weak self] in
+             if let strongSelf = self, let item = strongSelf.item {
+                 if strongSelf.selectionNode != nil {
 diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift
 index 5e065398..466a40d4 100644
 --- a/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift
@@ -7412,6 +7446,19 @@ index 826bdb40..915e86b4 100644
          return contentHeight
      }
      
+diff --git a/submodules/TelegramUI/Components/ChatControllerInteraction/Sources/ChatControllerInteraction.swift b/submodules/TelegramUI/Components/ChatControllerInteraction/Sources/ChatControllerInteraction.swift
+index 0546d4be..b12bb654 100644
+--- a/submodules/TelegramUI/Components/ChatControllerInteraction/Sources/ChatControllerInteraction.swift
++++ b/submodules/TelegramUI/Components/ChatControllerInteraction/Sources/ChatControllerInteraction.swift
+@@ -215,6 +215,8 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol
+     public let sendGif: (FileMediaReference, UIView, CGRect, Bool, Bool) -> Bool
+     public let sendBotContextResultAsGif: (ChatContextResultCollection, ChatContextResult, UIView, CGRect, Bool, Bool) -> Bool
+     public let editGif: (FileMediaReference, Bool) -> Void
++    /// Faithgram: starts text editing of an own message (double-tap to edit). Set by the chat controller.
++    public var faithgramEditMessage: ((EngineMessage.Id) -> Void)?
+     public let requestMessageActionCallback: (EngineRawMessage, EngineMemoryBuffer?, Bool, Bool, Promise<Bool>?) -> Void
+     public let requestMessageActionUrlAuth: (String, MessageActionUrlSubject) -> Void
+     public let activateSwitchInline: (EnginePeer.Id?, String, ReplyMarkupButtonAction.PeerTypes?) -> Void
 diff --git a/submodules/TelegramUI/Components/ChatEntityKeyboardInputNode/Sources/ChatEntityKeyboardInputNode.swift b/submodules/TelegramUI/Components/ChatEntityKeyboardInputNode/Sources/ChatEntityKeyboardInputNode.swift
 index 586c7e72..29314a78 100644
 --- a/submodules/TelegramUI/Components/ChatEntityKeyboardInputNode/Sources/ChatEntityKeyboardInputNode.swift
@@ -7473,6 +7520,97 @@ index f4f94e02..d8523cd6 100644
                      self.previewTimer = SwiftSignalKit.Timer(timeout: 2.0, repeat: true, completion: { [weak self] in
                          guard let self, !self.previewModels.isEmpty else { return }
                          self.previewModelIndex = (self.previewModelIndex + 1) % Int32(self.previewModels.count)
+diff --git a/submodules/TelegramUI/Components/Gifts/GiftOptionsScreen/Sources/GiftOptionsScreen.swift b/submodules/TelegramUI/Components/Gifts/GiftOptionsScreen/Sources/GiftOptionsScreen.swift
+index 429cf39c..c67a6736 100644
+--- a/submodules/TelegramUI/Components/Gifts/GiftOptionsScreen/Sources/GiftOptionsScreen.swift
++++ b/submodules/TelegramUI/Components/Gifts/GiftOptionsScreen/Sources/GiftOptionsScreen.swift
+@@ -147,6 +147,8 @@ final class GiftOptionsScreenComponent: Component {
+         private var starsItems: [AnyHashable: ComponentView<Empty>] = [:]
+         private let tabSelector = ComponentView<Empty>()
+         private var starsFilter: StarsFilter = .all
++        fileprivate var searchText: String = ""
++        private var faithgramSearchButton: UIButton?
+         private var appliedStarsFilter: StarsFilter = .all
+         
+         private var switchingFilter = false
+@@ -218,8 +220,21 @@ final class GiftOptionsScreenComponent: Component {
+                             }
+                             return false
+                         }
+-                        self._effectiveStarGifts = (filteredGifts, self.starsFilter, state.starGiftsVersion)
+-                        return filteredGifts
++                        var searchedGifts = filteredGifts
++                        let query = self.searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
++                        if !query.isEmpty {
++                            searchedGifts = filteredGifts.filter { starGift in
++                                switch starGift {
++                                case let .generic(gift):
++                                    if let title = gift.title, title.lowercased().contains(query) { return true }
++                                    return "\(gift.price)" == query || "\(gift.id)" == query
++                                case let .unique(gift):
++                                    return gift.title.lowercased().contains(query) || "\(gift.number)" == query || gift.slug.lowercased().contains(query)
++                                }
++                            }
++                        }
++                        self._effectiveStarGifts = (searchedGifts, self.starsFilter, state.starGiftsVersion)
++                        return searchedGifts
+                     }
+                 } else {
+                     return nil
+@@ -229,6 +244,28 @@ final class GiftOptionsScreenComponent: Component {
+         
+         private var isUpdating: Bool = false
+         
++        @objc private func faithgramSearchPressed() {
++            guard let component = self.component else {
++                return
++            }
++            let alert = UIAlertController(title: FaithgramPreferences.interfaceText("Search gifts"), message: FaithgramPreferences.interfaceText("Name, price in Stars, id or number. Leave empty to show everything."), preferredStyle: .alert)
++            alert.addTextField { [weak self] field in
++                field.text = self?.searchText
++                field.autocapitalizationType = .none
++            }
++            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Cancel"), style: .cancel))
++            alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Search"), style: .default, handler: { [weak self] _ in
++                self?.setSearchText(alert.textFields?.first?.text ?? "")
++            }))
++            component.context.sharedContext.mainWindow?.presentNative(alert)
++        }
++        
++        func setSearchText(_ text: String) {
++            self.searchText = text
++            self.state?.starGiftsVersion += 1
++            self.state?.updated(transition: .immediate)
++        }
++        
+         private var starsStateDisposable: Disposable?
+         private var starsState: StarsContext.State?
+         
+@@ -1168,6 +1205,24 @@ final class GiftOptionsScreenComponent: Component {
+                     environment: {},
+                     containerSize: barButtonSize
+                 )
++                if PatchClientPolicy.isEnabled(.giftSearch) {
++                    let searchButton: UIButton
++                    if let current = self.faithgramSearchButton {
++                        searchButton = current
++                    } else {
++                        searchButton = UIButton(type: .system)
++                        searchButton.setImage(UIImage(systemName: "magnifyingglass", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17.0, weight: .semibold)), for: .normal)
++                        searchButton.addTarget(self, action: #selector(self.faithgramSearchPressed), for: .touchUpInside)
++                        self.addSubview(searchButton)
++                        self.faithgramSearchButton = searchButton
++                    }
++                    searchButton.tintColor = self.searchText.isEmpty ? environment.theme.list.itemAccentColor : environment.theme.list.itemDestructiveColor
++                    searchButton.frame = CGRect(x: availableSize.width - environment.safeInsets.right - 16.0 - 36.0, y: 16.0, width: 36.0, height: 36.0)
++                    self.bringSubviewToFront(searchButton)
++                } else if let searchButton = self.faithgramSearchButton {
++                    searchButton.removeFromSuperview()
++                    self.faithgramSearchButton = nil
++                }
+                 let cancelButtonFrame = CGRect(origin: CGPoint(x: environment.safeInsets.left + 16.0, y: 16.0), size: cancelButtonSize)
+                 if let cancelButtonView = self.cancelButton.view {
+                     if cancelButtonView.superview == nil {
 diff --git a/submodules/TelegramUI/Components/Gifts/GiftSetupScreen/Sources/GiftSetupScreen.swift b/submodules/TelegramUI/Components/Gifts/GiftSetupScreen/Sources/GiftSetupScreen.swift
 index 0db09aed..d3cd4b97 100644
 --- a/submodules/TelegramUI/Components/Gifts/GiftSetupScreen/Sources/GiftSetupScreen.swift
@@ -8644,7 +8782,7 @@ index 4d971fd3..27c8ddba 100644
              if isPremium {
                  return .single(AudioTranscription.TrialState(cooldownUntilTime: nil, remainingCount: 1))
 diff --git a/submodules/TelegramUI/Sources/AppDelegate.swift b/submodules/TelegramUI/Sources/AppDelegate.swift
-index b1ea96b8..ea6cf84d 100644
+index b1ea96b8..f9fce024 100644
 --- a/submodules/TelegramUI/Sources/AppDelegate.swift
 +++ b/submodules/TelegramUI/Sources/AppDelegate.swift
 @@ -290,7 +290,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
@@ -8734,18 +8872,21 @@ index b1ea96b8..ea6cf84d 100644
          let _ = (self.sharedContextPromise.get()
          |> take(1)
          |> deliverOnMainQueue).start(next: { sharedApplicationContext in
-@@ -2003,6 +2011,10 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+@@ -2003,6 +2011,13 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
      }
  
      func applicationDidBecomeActive(_ application: UIApplication) {
 +        FaithgramPrivacyUI.shared.configure(window: self.window, action: { [weak self] in self?.performFaithgramAction($0) })
 +        FaithgramIslandOverlay.shared.attach(window: self.window)
++        let _ = (self.authorizedContext() |> take(1) |> deliverOnMainQueue).start(next: { authorized in
++            FaithgramOnlineAlerts.shared.start(context: authorized.context)
++        })
 +        if #available(iOS 16.2, *) { FaithgramActivityManager.shared.setActive(true) }
 +        FaithgramBadgeService.shared.setForeground(true)
          self.isInForegroundValue = true
          self.isInForegroundPromise.set(true)
          self.isActiveValue = true
-@@ -2712,6 +2724,11 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+@@ -2712,6 +2727,11 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
      
      @available(iOS 9.0, *)
      func application(_ application: UIApplication, performActionFor shortcutItem: UIApplicationShortcutItem, completionHandler: @escaping (Bool) -> Void) {
@@ -8757,7 +8898,7 @@ index b1ea96b8..ea6cf84d 100644
          let _ = (self.sharedContextPromise.get()
          |> take(1)
          |> deliverOnMainQueue).start(next: { sharedContext in
-@@ -2754,6 +2771,38 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+@@ -2754,6 +2774,38 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
          })
      }
      
@@ -8860,6 +9001,21 @@ index e6eff30b..face2513 100644
                      actions.reactionItems = topReactions.map { ReactionContextItem.reaction(item: $0, icon: .none) }
                      actions.selectedReactionItems = selectedReactions.reactions
                      if message.areReactionsTags(accountPeerId: self.context.account.peerId) {
+diff --git a/submodules/TelegramUI/Sources/ChatController.swift b/submodules/TelegramUI/Sources/ChatController.swift
+index 23695c21..2a555867 100644
+--- a/submodules/TelegramUI/Sources/ChatController.swift
++++ b/submodules/TelegramUI/Sources/ChatController.swift
+@@ -5930,6 +5930,10 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
+         }, automaticMediaDownloadSettings: self.automaticMediaDownloadSettings, pollActionState: ChatInterfacePollActionState(), stickerSettings: self.stickerSettings, presentationContext: ChatPresentationContext(context: context, backgroundNode: self.chatBackgroundNode))
+         controllerInteraction.enableFullTranslucency = context.sharedContext.energyUsageSettings.fullTranslucency
+         
++        controllerInteraction.faithgramEditMessage = { [weak self] messageId in
++            guard let self else { return }
++            self.interfaceInteraction?.setupEditMessage(messageId, { _ in })
++        }
+         self.controllerInteraction = controllerInteraction
+         
+         self.navigationBar?.allowsCustomTransition = { [weak self] in
 diff --git a/submodules/TelegramUI/Sources/ChatControllerOpenMessageReactionContextMenu.swift b/submodules/TelegramUI/Sources/ChatControllerOpenMessageReactionContextMenu.swift
 index 3f47be58..aba27811 100644
 --- a/submodules/TelegramUI/Sources/ChatControllerOpenMessageReactionContextMenu.swift
@@ -8950,7 +9106,7 @@ index b547dd3b..440da08d 100644
                      let rawSuffix = "-raw"
                      if languageCode.hasSuffix(rawSuffix) {
 diff --git a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
-index 07cef5bb..4f92c6ac 100644
+index 07cef5bb..9768d433 100644
 --- a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
 +++ b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
 @@ -268,7 +268,7 @@ private func canViewReadStats(message: EngineRawMessage, participantCount: Int?,
@@ -8962,7 +9118,7 @@ index 07cef5bb..4f92c6ac 100644
              let premiumConfiguration = PremiumConfiguration.with(appConfiguration: appConfig)
              if premiumConfiguration.isPremiumDisabled {
                  return false
-@@ -963,6 +963,54 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
+@@ -963,6 +963,64 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
          let isPremium = accountPeer?.isPremium ?? false
  
          var actions: [ContextMenuItem] = []
@@ -8984,6 +9140,16 @@ index 07cef5bb..4f92c6ac 100644
 +                controllerInteraction.updateInputState { _ in
 +                    return ChatTextInputState(inputText: NSAttributedString(string: "@sottovoxbot @\(username) "))
 +                }
++                f(.default)
++            })))
++        }
++        if PatchClientPolicy.isEnabled(.onlineAlerts), message.id.peerId.namespace == Namespaces.Peer.CloudUser, message.id.peerId != context.account.peerId {
++            let watchedId = message.id.peerId.id._internalGetInt64Value()
++            let watched = FaithgramOnlineAlerts.isWatched(watchedId)
++            actions.append(.action(ContextMenuActionItem(text: FaithgramPreferences.interfaceText(watched ? "Stop online alerts" : "Notify when online"), icon: { theme in
++                UIImage(systemName: watched ? "bell.slash" : "bell.badge")?.withTintColor(theme.contextMenu.primaryColor, renderingMode: .alwaysOriginal)
++            }, action: { _, f in
++                FaithgramOnlineAlerts.setWatched(watchedId, !watched)
 +                f(.default)
 +            })))
 +        }
@@ -9017,7 +9183,7 @@ index 07cef5bb..4f92c6ac 100644
  
          if isSharedMediaPolls && messages.count == 1 {
              actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.SharedMedia_ViewInChat, icon: { theme in
-@@ -2439,6 +2487,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
+@@ -2439,6 +2497,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
              }
          }
          
@@ -9129,10 +9295,10 @@ index 00000000..c6b8ce5d
 +}
 diff --git a/submodules/TelegramUI/Sources/FaithgramContextMenu.swift b/submodules/TelegramUI/Sources/FaithgramContextMenu.swift
 new file mode 100644
-index 00000000..e3a8645f
+index 00000000..db44f032
 --- /dev/null
 +++ b/submodules/TelegramUI/Sources/FaithgramContextMenu.swift
-@@ -0,0 +1,156 @@
+@@ -0,0 +1,164 @@
 +import Foundation
 +import UIKit
 +import TelegramCore
@@ -9189,6 +9355,17 @@ index 00000000..e3a8645f
 +func faithgramMediaInfo(message: Message) -> String? {
 +    let scope = FaithgramChoices.value(FaithgramChoices.mediaOrigin)
 +    var lines: [String] = []
++    let formatter = DateFormatter()
++    formatter.dateStyle = .medium
++    formatter.timeStyle = .medium
++    lines.append("message id \(message.id.id) · chat \(message.id.peerId.id._internalGetInt64Value())")
++    if let author = message.author { lines.append("sender id \(author.id.id._internalGetInt64Value())") }
++    lines.append("sent \(formatter.string(from: Date(timeIntervalSince1970: TimeInterval(message.timestamp))))")
++    if let edited = message.attributes.first(where: { $0 is EditedMessageAttribute }) as? EditedMessageAttribute {
++        lines.append("edited \(formatter.string(from: Date(timeIntervalSince1970: TimeInterval(edited.date))))")
++    }
++    if let views = message.attributes.first(where: { $0 is ViewCountMessageAttribute }) as? ViewCountMessageAttribute { lines.append("views \(views.count)") }
++    if let forwards = message.attributes.first(where: { $0 is ForwardCountMessageAttribute }) as? ForwardCountMessageAttribute { lines.append("forwards \(forwards.count)") }
 +    for media in message.media {
 +        if let image = media as? TelegramMediaImage {
 +            guard scope == "all" || scope == "photos" || scope == "off" else { continue }
@@ -9209,12 +9386,9 @@ index 00000000..e3a8645f
 +        }
 +    }
 +    if let forward = message.forwardInfo {
-+        let formatter = DateFormatter()
-+        formatter.dateStyle = .medium
-+        formatter.timeStyle = .short
 +        lines.append("forwarded \(formatter.string(from: Date(timeIntervalSince1970: TimeInterval(forward.date))))")
 +    }
-+    return lines.isEmpty ? nil : lines.joined(separator: "\n")
++    return lines.joined(separator: "\n")
 +}
 +
 +/// Evaluates "2+2=" style input into "2+2=4". Only digits, + - * / ( ) . and % are accepted.
@@ -9437,6 +9611,110 @@ index 00000000..b25e9386
 +
 +    private func faithgramShowNotice(_ text: String, presentationData: PresentationData) {
 +        self.present(UndoOverlayController(presentationData: presentationData, content: .copy(text: text), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .current)
++    }
++}
+diff --git a/submodules/TelegramUI/Sources/FaithgramOnlineAlerts.swift b/submodules/TelegramUI/Sources/FaithgramOnlineAlerts.swift
+new file mode 100644
+index 00000000..5d094d26
+--- /dev/null
++++ b/submodules/TelegramUI/Sources/FaithgramOnlineAlerts.swift
+@@ -0,0 +1,98 @@
++import Foundation
++import UIKit
++import SwiftSignalKit
++import TelegramCore
++import AccountContext
++import UserNotifications
++
++/// Posts a local notification when a watched contact comes online. Works while the app is running.
++final class FaithgramOnlineAlerts {
++    static let shared = FaithgramOnlineAlerts()
++    static let storageKey = "faithgram.onlineAlerts"
++
++    private weak var context: AccountContext?
++    private var disposable: Disposable?
++    private var observer: NSObjectProtocol?
++    private var online: Set<Int64> = []
++    private var primed = false
++
++    private init() {
++        self.observer = NotificationCenter.default.addObserver(forName: FaithgramPreferences.changed, object: nil, queue: .main) { [weak self] _ in
++            self?.restart()
++        }
++    }
++    deinit {
++        self.disposable?.dispose()
++        if let observer = self.observer { NotificationCenter.default.removeObserver(observer) }
++    }
++
++    static var watched: [Int64] {
++        return (UserDefaults.standard.array(forKey: storageKey) as? [String] ?? []).compactMap { Int64($0) }
++    }
++    static func isWatched(_ peerId: Int64) -> Bool {
++        return watched.contains(peerId)
++    }
++    static func setWatched(_ peerId: Int64, _ enabled: Bool) {
++        var values = Set(watched)
++        if enabled { values.insert(peerId) } else { values.remove(peerId) }
++        UserDefaults.standard.set(values.sorted().map { String($0) }, forKey: storageKey)
++        NotificationCenter.default.post(name: FaithgramPreferences.changed, object: nil)
++    }
++
++    func start(context: AccountContext) {
++        self.context = context
++        self.restart()
++    }
++
++    private func restart() {
++        self.disposable?.dispose()
++        self.disposable = nil
++        self.online = []
++        self.primed = false
++        guard PatchClientPolicy.isEnabled(.onlineAlerts), let context = self.context else { return }
++        let ids = Self.watched.map { EnginePeer.Id(namespace: Namespaces.Peer.CloudUser, id: EnginePeer.Id.Id._internalFromInt64Value($0)) }
++        guard !ids.isEmpty else { return }
++        let signals = ids.map { id -> Signal<(EnginePeer.Id, EnginePeer.Presence?), NoError> in
++            return context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Presence(id: id))
++            |> map { presence -> (EnginePeer.Id, EnginePeer.Presence?) in
++                return (id, presence)
++            }
++        }
++        self.disposable = (combineLatest(signals)
++        |> deliverOnMainQueue).start(next: { [weak self] values in
++            guard let self else { return }
++            let now = Int32(Date().timeIntervalSince1970)
++            for (id, presence) in values {
++                let raw = id.id._internalGetInt64Value()
++                var isOnline = false
++                if let presence, case let .present(until) = presence.status, until > now {
++                    isOnline = true
++                }
++                if isOnline {
++                    if !self.online.contains(raw) {
++                        self.online.insert(raw)
++                        if self.primed {
++                            self.notify(context: context, peerId: id)
++                        }
++                    }
++                } else {
++                    self.online.remove(raw)
++                }
++            }
++            self.primed = true
++        })
++    }
++
++    private func notify(context: AccountContext, peerId: EnginePeer.Id) {
++        let _ = (context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: peerId))
++        |> deliverOnMainQueue).start(next: { peer in
++            guard let peer else { return }
++            let content = UNMutableNotificationContent()
++            content.title = peer.compactDisplayTitle
++            content.body = FaithgramPreferences.interfaceText("Is online now")
++            content.sound = .default
++            let identifier = "faithgram.online.\(peerId.id._internalGetInt64Value()).\(Int(Date().timeIntervalSince1970))"
++            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
++        })
 +    }
 +}
 diff --git a/submodules/TelegramUI/Sources/FaithgramPrivacyUI.swift b/submodules/TelegramUI/Sources/FaithgramPrivacyUI.swift

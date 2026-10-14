@@ -128,6 +128,8 @@ public enum PatchClientOption: String, CaseIterable {
     case uploadBoost
     case quickTranslateButton
     case islandBadge
+    case disableSwipeToReply
+    case onlineAlerts
     case contextMenuReply
     case contextMenuEdit
     case contextMenuCopy
@@ -278,6 +280,8 @@ public enum PatchClientOption: String, CaseIterable {
         case .uploadBoost: return "Upload Boost"
         case .quickTranslateButton: return "Quick Translate button"
         case .islandBadge: return "Island badge in the app"
+        case .disableSwipeToReply: return "Disable swipe to reply"
+        case .onlineAlerts: return "Online alerts"
         case .contextMenuReply: return "Reply"
         case .contextMenuEdit: return "Edit"
         case .contextMenuCopy: return "Copy"
