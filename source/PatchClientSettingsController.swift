@@ -427,7 +427,7 @@ func faithgramSections(for screen: FaithgramScreen, env: FaithgramSettingsEnviro
                 page("Download type", "arrow.down.to.line", .choice(FaithgramChoices.downloadType)),
                 toggle("Instant View for X post", "xmark", .instantViewX)
             ]),
-            FaithgramSection("Whois", [toggle("Look up IP and domains", "server.rack", .whoisLookup)], footer: "Hold an IP address or a domain link in a chat to look it up. Lookups go to ip-api.com."),
+            FaithgramSection("Whois", [toggle("Look up IP and domains", "server.rack", .whoisLookup)], footer: "Hold a link in a chat to look up its host. Lookups go to ipwho.is."),
             FaithgramSection("Calcmula", [
                 toggle("Calculation suggestions", "plus.forwardslash.minus", .calcSuggestions),
                 link("Show example usage", "eye") { env in env.info("Type an expression such as 12*(3+4) or 15% of 200 in the message field. A suggestion with the result appears above the keyboard; tap it to insert the answer.", title: "calcmula") }

@@ -277,10 +277,33 @@ index 00000000..5d626926
 +        context.sharedContext.mainWindow?.presentNative(alert)
 +    }
 +}
+diff --git a/submodules/Camera/Sources/CameraDevice.swift b/submodules/Camera/Sources/CameraDevice.swift
+index c1d3eefb..4441ce32 100644
+--- a/submodules/Camera/Sources/CameraDevice.swift
++++ b/submodules/Camera/Sources/CameraDevice.swift
+@@ -148,7 +148,8 @@ final class CameraDevice {
+             }
+             #endif
+             
+-            if let targetFPS = device.actualFPS(maxFramerate) {
++            let faithgramForce60 = (UserDefaults.standard.object(forKey: "patchclient.option.force60FPS") as? Bool) ?? false
++            if let targetFPS = device.actualFPS(faithgramForce60 ? max(maxFramerate, 60.0) : maxFramerate) {
+                 device.activeVideoMinFrameDuration = targetFPS.duration
+                 device.activeVideoMaxFrameDuration = targetFPS.duration
+             }
 diff --git a/submodules/ChatListUI/Sources/ChatListController.swift b/submodules/ChatListUI/Sources/ChatListController.swift
-index eafe9575..61f376e6 100644
+index eafe9575..7dd0d654 100644
 --- a/submodules/ChatListUI/Sources/ChatListController.swift
 +++ b/submodules/ChatListUI/Sources/ChatListController.swift
+@@ -438,7 +438,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
+         
+         self.badgeDisposable = (combineLatest(renderedTotalUnreadCount(accountManager: context.sharedContext.accountManager, engine: context.engine), self.presentationDataValue.get()) |> deliverOnMainQueue).startStrict(next: { [weak self] count, presentationData in
+             if let strongSelf = self {
+-                if count.0 == 0 {
++                if count.0 == 0 || !FaithgramChoices.contains(FaithgramChoices.tabsBadge, "chats") {
+                     strongSelf.tabBarItem.badgeValue = ""
+                 } else {
+                     strongSelf.tabBarItem.badgeValue = compactNumericCountString(Int(count.0), decimalSeparator: presentationData.dateTimeFormat.decimalSeparator)
 @@ -745,6 +745,11 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
                      return
                  }
@@ -399,7 +422,7 @@ index eafe9575..61f376e6 100644
              return
          }
 diff --git a/submodules/ChatListUI/Sources/ChatListControllerNode.swift b/submodules/ChatListUI/Sources/ChatListControllerNode.swift
-index 00220fdd..f84ad960 100644
+index 00220fdd..46882a9e 100644
 --- a/submodules/ChatListUI/Sources/ChatListControllerNode.swift
 +++ b/submodules/ChatListUI/Sources/ChatListControllerNode.swift
 @@ -649,7 +649,7 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
@@ -411,7 +434,23 @@ index 00220fdd..f84ad960 100644
                      if hasLiveStream {
                          if translation.x >= 30.0 {
                              self.panRecognizer?.cancel()
-@@ -1653,6 +1653,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
+@@ -1554,12 +1554,13 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
+                         switch entry {
+                         case .all:
+                             id = Int32.min
+-                            title = HorizontalTabsComponent.Tab.Title(text: self.presentationData.strings.ChatList_Tabs_All, entities: [], enableAnimations: false)
++                            let faithgramAllTitle = FaithgramPreferences.text("allChatsTitle")
++                            title = HorizontalTabsComponent.Tab.Title(text: faithgramAllTitle.isEmpty ? self.presentationData.strings.ChatList_Tabs_All : faithgramAllTitle, entities: [], enableAnimations: false)
+                             isMainTab = true
+                         case let .filter(idValue, text, unread):
+                             id = AnyHashable(idValue)
+                             title = HorizontalTabsComponent.Tab.Title(text: text.text, entities: text.entities, enableAnimations: text.enableAnimations)
+-                            if unread.value != 0 {
++                            if unread.value != 0, PatchClientPolicy.isEnabled(.folderNotificationBadge) {
+                                 badge = HorizontalTabsComponent.Tab.Badge(
+                                     title: "\(unread.value)",
+                                     isAccent: unread.hasUnmuted
+@@ -1653,6 +1654,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
              navigationHeaderPanels = AnyComponent(HeaderPanelContainerComponent(
                  theme: self.presentationData.theme,
                  tabs: tabs,
@@ -419,7 +458,7 @@ index 00220fdd..f84ad960 100644
                  panels: panels
              ))
          }
-@@ -1733,6 +1734,9 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
+@@ -1733,6 +1735,9 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                  self.view.addSubview(navigationBarComponentView)
              }
              transition.setFrame(view: navigationBarComponentView, frame: CGRect(origin: CGPoint(), size: navigationBarSize))
@@ -429,7 +468,7 @@ index 00220fdd..f84ad960 100644
              
              return (navigationBarSize.height, 0.0)
          } else {
-@@ -1848,6 +1852,9 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
+@@ -1848,6 +1853,9 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
          insets.top += navigationBarHeight
          insets.left += layout.safeInsets.left
          insets.right += layout.safeInsets.right
@@ -439,7 +478,7 @@ index 00220fdd..f84ad960 100644
          
          if let toolbarData = self.toolbarData {
              var panelsBottomInset: CGFloat = layout.insets(options: []).bottom
-@@ -2459,6 +2466,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
+@@ -2459,6 +2467,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
  }
  
  func shouldDisplayStoriesInChatListHeader(storySubscriptions: EngineStorySubscriptions, isHidden: Bool) -> Bool {
@@ -505,6 +544,19 @@ index b0d81137..17283d51 100644
      public let updateTextInputStateAndMode: (@escaping (ChatTextInputState, ChatInputMode) -> (ChatTextInputState, ChatInputMode)) -> Void
      public let updateInputModeAndDismissedButtonKeyboardMessageId: ((ChatPresentationInterfaceState) -> (ChatInputMode, EngineMessage.Id?)) -> Void
      public let openStickers: () -> Void
+diff --git a/submodules/ContactListUI/Sources/ContactsController.swift b/submodules/ContactListUI/Sources/ContactsController.swift
+index d74bf3fa..7575fd96 100644
+--- a/submodules/ContactListUI/Sources/ContactsController.swift
++++ b/submodules/ContactListUI/Sources/ContactsController.swift
+@@ -213,7 +213,7 @@ public class ContactsController: ViewController {
+             |> deliverOnMainQueue).start(next: { [weak self] status, suppressedAndSortOrder in
+                 if let strongSelf = self {
+                     let (suppressed, sortOrder) = suppressedAndSortOrder
+-                    strongSelf.tabBarItem.badgeValue = status != .allowed && !suppressed ? "!" : nil
++                    strongSelf.tabBarItem.badgeValue = (FaithgramChoices.contains(FaithgramChoices.tabsBadge, "contacts") && status != .allowed && !suppressed) ? "!" : nil
+                     strongSelf.sortOrderPromise.set(.single(sortOrder))
+                 }
+             }).strict()
 diff --git a/submodules/FaithgramActivity/BUILD b/submodules/FaithgramActivity/BUILD
 new file mode 100644
 index 00000000..c9af717f
@@ -537,6 +589,31 @@ index 00000000..05d15207
 +    }
 +    public init() { }
 +}
+diff --git a/submodules/LocalizedPeerData/Sources/PeerTitle.swift b/submodules/LocalizedPeerData/Sources/PeerTitle.swift
+index 9e230a90..243ca2a9 100644
+--- a/submodules/LocalizedPeerData/Sources/PeerTitle.swift
++++ b/submodules/LocalizedPeerData/Sources/PeerTitle.swift
+@@ -29,6 +29,20 @@ public extension EnginePeer {
+     }
+ 
+     func displayTitle(strings: PresentationStrings, displayOrder: PresentationPersonNameOrder) -> String {
++        let title = self.faithgramRawDisplayTitle(strings: strings, displayOrder: displayOrder)
++        if PatchClientPolicy.isEnabled(.fixInvisibleName), case let .user(user) = self, !user.id.isReplies {
++            let visible = title.unicodeScalars.filter { scalar in
++                !(scalar.properties.isWhitespace || scalar.properties.generalCategory == .format || scalar.properties.generalCategory == .control || scalar.properties.generalCategory == .spaceSeparator || scalar.value == 0x3164 || scalar.value == 0x2800)
++            }
++            if visible.isEmpty {
++                if let username = user.addressName, !username.isEmpty { return "@" + username }
++                return "user \(user.id.id._internalGetInt64Value())"
++            }
++        }
++        return title
++    }
++    
++    private func faithgramRawDisplayTitle(strings: PresentationStrings, displayOrder: PresentationPersonNameOrder) -> String {
+         switch self {
+         case let .user(user):
+             if user.id.isReplies {
 diff --git a/submodules/Media/LocalAudioTranscription/Sources/LocalAudioTranscription.swift b/submodules/Media/LocalAudioTranscription/Sources/LocalAudioTranscription.swift
 index 243b6220..031e894a 100644
 --- a/submodules/Media/LocalAudioTranscription/Sources/LocalAudioTranscription.swift
@@ -614,6 +691,42 @@ index 243b6220..031e894a 100644
      if !locales.contains(Locale.current.identifier) {
          locales.append(Locale.current.identifier)
      }
+diff --git a/submodules/MediaPickerUI/Sources/MediaPickerScreen.swift b/submodules/MediaPickerUI/Sources/MediaPickerScreen.swift
+index 5f4142c0..884a471b 100644
+--- a/submodules/MediaPickerUI/Sources/MediaPickerScreen.swift
++++ b/submodules/MediaPickerUI/Sources/MediaPickerScreen.swift
+@@ -711,8 +711,12 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
+                 }
+             }
+             
++            if !PatchClientPolicy.isEnabled(.cameraInGallery) {
++                useLegacyCamera = false
++                useModernCamera = false
++            }
+             if useLegacyCamera {
+-                let enableAnimations = self.controller?.context.sharedContext.energyUsageSettings.fullTranslucency ?? true
++                let enableAnimations = (self.controller?.context.sharedContext.energyUsageSettings.fullTranslucency ?? true) && PatchClientPolicy.isEnabled(.cameraPreviewInGallery)
+   
+                 let cameraView = TGAttachmentCameraView(forSelfPortrait: false, videoModeByDefault: controller.bannedSendPhotos != nil && controller.bannedSendVideos == nil)!
+                 cameraView.clipsToBounds = true
+@@ -897,7 +901,7 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
+         }
+         
+         func updateIsCameraActive() {
+-            let isCameraActive = !self.isSuspended && !self.hasGallery && self.isCameraPreviewVisible
++            let isCameraActive = !self.isSuspended && !self.hasGallery && self.isCameraPreviewVisible && PatchClientPolicy.isEnabled(.cameraPreviewInGallery)
+             if let cameraView = self.cameraView {
+                 if isCameraActive {
+                     cameraView.resumePreview()
+@@ -2327,7 +2331,7 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
+         }
+         self.interaction?.displayLivePhotoIcon = displayLivePhotoIcon
+         
+-        let highQualityPhoto = UserDefaults.standard.bool(forKey: "TG_photoHighQuality_v0")
++        let highQualityPhoto = UserDefaults.standard.bool(forKey: "TG_photoHighQuality_v0") || PatchClientPolicy.isEnabled(.sendPhotosHD)
+         if highQualityPhoto {
+             self.interaction?.editingState.setHighQualityPhoto(highQualityPhoto)
+         }
 diff --git a/submodules/RMIntro/Sources/platform/ios/RMIntroViewController.m b/submodules/RMIntro/Sources/platform/ios/RMIntroViewController.m
 index 2b2977e4..d7e55057 100644
 --- a/submodules/RMIntro/Sources/platform/ios/RMIntroViewController.m
@@ -1781,7 +1894,7 @@ index 00000000..d80a8954
 +}
 diff --git a/submodules/SettingsUI/Sources/PatchClientSettingsController.swift b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
 new file mode 100644
-index 00000000..8bce92ce
+index 00000000..7d765e90
 --- /dev/null
 +++ b/submodules/SettingsUI/Sources/PatchClientSettingsController.swift
 @@ -0,0 +1,857 @@
@@ -2214,7 +2327,7 @@ index 00000000..8bce92ce
 +                page("Download type", "arrow.down.to.line", .choice(FaithgramChoices.downloadType)),
 +                toggle("Instant View for X post", "xmark", .instantViewX)
 +            ]),
-+            FaithgramSection("Whois", [toggle("Look up IP and domains", "server.rack", .whoisLookup)], footer: "Hold an IP address or a domain link in a chat to look it up. Lookups go to ip-api.com."),
++            FaithgramSection("Whois", [toggle("Look up IP and domains", "server.rack", .whoisLookup)], footer: "Hold a link in a chat to look up its host. Lookups go to ipwho.is."),
 +            FaithgramSection("Calcmula", [
 +                toggle("Calculation suggestions", "plus.forwardslash.minus", .calcSuggestions),
 +                link("Show example usage", "eye") { env in env.info("Type an expression such as 12*(3+4) or 15% of 200 in the message field. A suggestion with the result appears above the keyboard; tap it to insert the answer.", title: "calcmula") }
@@ -2642,6 +2755,19 @@ index 00000000..8bce92ce
 +public func patchClientSettingsController(context: AccountContext) -> ViewController {
 +    return faithgramScreenController(context: context, screen: .root)
 +}
+diff --git a/submodules/ShareController/Sources/SharePeersContainerNode.swift b/submodules/ShareController/Sources/SharePeersContainerNode.swift
+index 1bc44a39..60361a2d 100644
+--- a/submodules/ShareController/Sources/SharePeersContainerNode.swift
++++ b/submodules/ShareController/Sources/SharePeersContainerNode.swift
+@@ -170,7 +170,7 @@ final class SharePeersContainerNode: ASDisplayNode, ShareContentContainerNode {
+             var entries: [SharePeerEntry] = []
+             var index: Int32 = 0
+             
+-            if canShareStory {
++            if canShareStory && PatchClientPolicy.isEnabled(.repostToStory) {
+                 let storyMode: ShareControllerPeerGridItem.ShareItem.StoryMode
+                 if fromPublicChannel {
+                     storyMode = .repostMessage
 diff --git a/submodules/TelegramCallsUI/Sources/PresentationCallManager.swift b/submodules/TelegramCallsUI/Sources/PresentationCallManager.swift
 index 6d7cd2b9..c8ad301f 100644
 --- a/submodules/TelegramCallsUI/Sources/PresentationCallManager.swift
@@ -2731,6 +2857,20 @@ index 3f2b4794..b73ccbb3 100644
      declareEncodable(EditedMessageAttribute.self, f: { EditedMessageAttribute(decoder: $0) })
      declareEncodable(ReplyMarkupMessageAttribute.self, f: { ReplyMarkupMessageAttribute(decoder: $0) })
      declareEncodable(OutgoingChatContextResultMessageAttribute.self, f: { OutgoingChatContextResultMessageAttribute(decoder: $0) })
+diff --git a/submodules/TelegramCore/Sources/ApiUtils/ReactionsMessageAttribute.swift b/submodules/TelegramCore/Sources/ApiUtils/ReactionsMessageAttribute.swift
+index 38df7832..95bb9a22 100644
+--- a/submodules/TelegramCore/Sources/ApiUtils/ReactionsMessageAttribute.swift
++++ b/submodules/TelegramCore/Sources/ApiUtils/ReactionsMessageAttribute.swift
+@@ -174,6 +174,9 @@ private func mergeReactions(reactions: [MessageReaction], recentPeers: [Reaction
+ }
+ 
+ public func mergedMessageReactions(attributes: [MessageAttribute], isTags: Bool) -> ReactionsMessageAttribute? {
++    if PatchClientPolicy.isEnabled(.hideReactions) {
++        return nil
++    }
+     var current: ReactionsMessageAttribute?
+     var pending: PendingReactionsMessageAttribute?
+     var pendingStars: PendingStarsReactionsMessageAttribute?
 diff --git a/submodules/TelegramCore/Sources/ApiUtils/StoreMessage_Telegram.swift b/submodules/TelegramCore/Sources/ApiUtils/StoreMessage_Telegram.swift
 index 7db5db9e..4964faf9 100644
 --- a/submodules/TelegramCore/Sources/ApiUtils/StoreMessage_Telegram.swift
@@ -2929,6 +3069,39 @@ index 1f6b2e08..628ee3c0 100644
  ) -> Signal<FetchResourceSourceType, FetchResourceError> {
      var isRandomAccessAllowed = true
      switch reference {
+diff --git a/submodules/TelegramCore/Sources/Network/MultipartFetch.swift b/submodules/TelegramCore/Sources/Network/MultipartFetch.swift
+index 5f5f2d4d..74766073 100644
+--- a/submodules/TelegramCore/Sources/Network/MultipartFetch.swift
++++ b/submodules/TelegramCore/Sources/Network/MultipartFetch.swift
+@@ -572,12 +572,13 @@ private final class MultipartFetchManager {
+                 self.parallelParts = 1
+             }
+         } else if let size = size {
++            let boost = FaithgramChoices.downloadBoostMultiplier
+             if size <= 512 * 1024 {
+                 self.defaultPartSize = 16 * 1024
+-                self.parallelParts = 4 * 4
++                self.parallelParts = min(32, 4 * 4 * boost)
+             } else {
+                 self.defaultPartSize = 512 * 1024
+-                self.parallelParts = 8
++                self.parallelParts = min(32, 8 * boost)
+             }
+         } else {
+             self.parallelParts = 1
+diff --git a/submodules/TelegramCore/Sources/Network/MultipartUpload.swift b/submodules/TelegramCore/Sources/Network/MultipartUpload.swift
+index b761375c..2564729b 100644
+--- a/submodules/TelegramCore/Sources/Network/MultipartUpload.swift
++++ b/submodules/TelegramCore/Sources/Network/MultipartUpload.swift
+@@ -150,7 +150,7 @@ private final class MultipartUploadManager {
+         arc4random_buf(&fileId, 8)
+         self.fileId = fileId
+         
+-        if increaseParallelParts {
++        if increaseParallelParts || PatchClientPolicy.isEnabled(.uploadBoost) {
+             self.parallelParts = 30
+         } else {
+             self.parallelParts = 3
 diff --git a/submodules/TelegramCore/Sources/Network/Network.swift b/submodules/TelegramCore/Sources/Network/Network.swift
 index 5410e714..f41224f9 100644
 --- a/submodules/TelegramCore/Sources/Network/Network.swift
@@ -3390,10 +3563,10 @@ index 00000000..e06e4eb1
 +}
 diff --git a/submodules/TelegramCore/Sources/PatchClient/FaithgramChoices.swift b/submodules/TelegramCore/Sources/PatchClient/FaithgramChoices.swift
 new file mode 100644
-index 00000000..f3214d09
+index 00000000..1d3e8c64
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/PatchClient/FaithgramChoices.swift
-@@ -0,0 +1,266 @@
+@@ -0,0 +1,276 @@
 +import Foundation
 +
 +/// A setting with a fixed set of values. Values are stored as text under
@@ -3482,6 +3655,16 @@ index 00000000..f3214d09
 +        mediaOrigin, recordingButton, tabsBadge, recordingMicrophone, downloadType, downloadBoost,
 +        translateService, voiceService, rankOwner, rankAdmin, rankMember
 +    ]
++
++    /// 1, 2, 4 or 8 parallel download connections multiplier from the Download Boost choice.
++    public static var downloadBoostMultiplier: Int {
++        switch value(downloadBoost) {
++        case "x2": return 2
++        case "x4": return 4
++        case "x8": return 8
++        default: return 1
++        }
++    }
 +
 +    public static func choice(forStorageKey key: String) -> FaithgramChoice? {
 +        return all.first { $0.storageKey == key }
@@ -6652,10 +6835,29 @@ index 4a26f877..c3ac95b9 100644
                              
                              node.addSubnode(buttonNode)
 diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift
-index 06d13699..b540acd0 100644
+index 06d13699..2bf51d63 100644
 --- a/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift
 +++ b/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift
-@@ -2205,6 +2205,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
+@@ -832,7 +832,8 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
+     }
+         
+     override public func asyncLayout() -> (_ item: ChatMessageItem, _ params: ListViewItemLayoutParams, _ mergedTop: ChatMessageMerge, _ mergedBottom: ChatMessageMerge, _ dateHeaderAtBottom: ChatMessageHeaderSpec) -> (ListViewItemNodeLayout, (ListViewItemUpdateAnimation, ListViewItemApply, Bool) -> Void) {
+-        var displaySize = CGSize(width: 180.0, height: 180.0)
++        let faithgramStickerScale = CGFloat(min(max(Int(FaithgramPreferences.text("stickerSize")) ?? 100, 50), 200)) / 100.0
++        var displaySize = CGSize(width: 180.0 * faithgramStickerScale, height: 180.0 * faithgramStickerScale)
+         let telegramFile = self.telegramFile
+         let emojiFile = self.emojiFile
+         let telegramDice = self.telegramDice
+@@ -1724,6 +1725,8 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
+                     dateAndStatusApply(animation)
+                     if case .customChatContents = item.associatedData.subject {
+                         strongSelf.dateAndStatusNode.isHidden = true
++                    } else if !PatchClientPolicy.isEnabled(.stickerTimestamp) {
++                        strongSelf.dateAndStatusNode.isHidden = true
+                     }
+ 
+                     if needsReplyBackground {
+@@ -2205,6 +2208,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
      
      private var playedPremiumStickerAnimation = false
      func playPremiumStickerAnimation() {
@@ -6663,7 +6865,7 @@ index 06d13699..b540acd0 100644
          guard !self.playedPremiumStickerAnimation, let item = self.item, let file = self.telegramFile, file.isPremiumSticker, let effect = file.videoThumbnails.first else {
              return
          }
-@@ -2222,6 +2223,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
+@@ -2222,6 +2226,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
      }
      
      public func playEffectAnimation(resource: MediaResource, isStickerEffect: Bool = false) {
@@ -6671,6 +6873,57 @@ index 06d13699..b540acd0 100644
          guard let item = self.item else {
              return
          }
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift
+index 2dcfc95e..72352f7a 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift
+@@ -2763,6 +2763,9 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
+                                 string = ""
+                             }
+                         }
++                        if let faithgramColor = faithgramRankBadgeColor(for: authorRank) {
++                            rankBadgeColor = faithgramColor
++                        }
+                         if !string.isEmpty {
+                             rankBadgeString = NSAttributedString(string: "\(string)", font: inlineBotPrefixFont, textColor: rankBadgeColor ?? defaultRankColor)
+                         }
+@@ -5751,7 +5754,9 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
+                 } else if case .tap = gesture {
+                     item.controllerInteraction.clickThroughMessage(self.view, location)
+                 } else if case .doubleTap = gesture {
+-                    if canAddMessageReactions(message: EngineMessage(item.message)) {
++                    if PatchClientPolicy.isEnabled(.doubleTapEdit), !item.message.flags.contains(.Incoming), item.message.id.namespace == Namespaces.Message.Cloud, !item.message.text.isEmpty {
++                        item.controllerInteraction.setupEditMessage(item.message.id, { _ in })
++                    } else if canAddMessageReactions(message: EngineMessage(item.message)) {
+                         item.controllerInteraction.updateMessageReaction(item.message, .default, false, nil)
+                     }
+                 }
+@@ -7877,3 +7882,25 @@ public final class NameNavigateButton: HighlightableButton {
+         }
+     }
+ }
++
++/// Rank label colour chosen in Faithgram settings; nil keeps Telegram's default.
++private func faithgramRankBadgeColor(for rank: CachedChannelAdminRank?) -> UIColor? {
++    guard let rank else { return nil }
++    let choice: FaithgramChoice
++    switch rank {
++    case .creator: choice = FaithgramChoices.rankOwner
++    case .admin: choice = FaithgramChoices.rankAdmin
++    case .member: choice = FaithgramChoices.rankMember
++    }
++    switch FaithgramChoices.value(choice) {
++    case "red": return UIColor(rgb: 0xe5484d)
++    case "orange": return UIColor(rgb: 0xf0883e)
++    case "yellow": return UIColor(rgb: 0xe3b341)
++    case "green": return UIColor(rgb: 0x49a355)
++    case "cyan": return UIColor(rgb: 0x2bb3c0)
++    case "blue": return UIColor(rgb: 0x3d8af7)
++    case "purple": return UIColor(rgb: 0x956ac8)
++    case "pink": return UIColor(rgb: 0xe4578f)
++    default: return nil
++    }
++}
 diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift
 index ffb7e154..6904dfd4 100644
 --- a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift
@@ -6686,7 +6939,7 @@ index ffb7e154..6904dfd4 100644
              }
              if let impressionCount = arguments.impressionCount {
 diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
-index 98abd8ec..6d7c8538 100644
+index 98abd8ec..4837555d 100644
 --- a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
 +++ b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
 @@ -108,6 +108,7 @@ public func stringForMessageTimestampStatus(
@@ -6697,7 +6950,18 @@ index 98abd8ec..6d7c8538 100644
      if timestamp == scheduleWhenOnlineTimestamp {
          dateText = "         "
      }
-@@ -248,5 +249,14 @@ public func stringForMessageTimestampStatus(
+@@ -178,6 +179,10 @@ public func stringForMessageTimestampStatus(
+         } else {
+             dateText = strings.Message_FullDateFormat(dayText, stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat)).string
+         }
++    } else if PatchClientPolicy.isEnabled(.originalForwardDate), let forwardInfo = message.forwardInfo, !forwardInfo.flags.contains(.isImported), forwardInfo.date > 0 {
++        var forwardTime = stringForMessageTimestamp(timestamp: forwardInfo.date, dateTimeFormat: dateTimeFormat)
++        if PatchClientPolicy.isEnabled(.secondsInMessages) { forwardTime = faithgramTimeWithSeconds(forwardTime, timestamp: forwardInfo.date) }
++        dateText = "\(dateStringForDay(strings: strings, dateTimeFormat: dateTimeFormat, timestamp: forwardInfo.date)) \(forwardTime) → \(dateText)"
+     } else if let forwardInfo = message.forwardInfo, forwardInfo.flags.contains(.isImported) {
+         dateText = strings.Message_ImportedDateFormat(dateStringForDay(strings: strings, dateTimeFormat: dateTimeFormat, timestamp: forwardInfo.date), stringForMessageTimestamp(timestamp: forwardInfo.date, dateTimeFormat: dateTimeFormat), dateText).string
+     }
+@@ -248,5 +253,14 @@ public func stringForMessageTimestampStatus(
          }
      }
      
@@ -6938,6 +7202,45 @@ index 01c8b818..954714b1 100644
          let buttonSize = CGSize(width: 40.0, height: 40.0)
          
          let availableWidth = width - leftInset - rightInset
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/Sources/ChatMessageStickerItemNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/Sources/ChatMessageStickerItemNode.swift
+index 4d5cd55f..2a250715 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/Sources/ChatMessageStickerItemNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/Sources/ChatMessageStickerItemNode.swift
+@@ -420,7 +420,8 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
+     }
+     
+     override public func asyncLayout() -> (_ item: ChatMessageItem, _ params: ListViewItemLayoutParams, _ mergedTop: ChatMessageMerge, _ mergedBottom: ChatMessageMerge, _ dateHeaderAtBottom: ChatMessageHeaderSpec) -> (ListViewItemNodeLayout, (ListViewItemUpdateAnimation, ListViewItemApply, Bool) -> Void) {
+-        let displaySize = CGSize(width: 184.0, height: 184.0)
++        let faithgramStickerScale = CGFloat(min(max(Int(FaithgramPreferences.text("stickerSize")) ?? 100, 50), 200)) / 100.0
++        let displaySize = CGSize(width: 184.0 * faithgramStickerScale, height: 184.0 * faithgramStickerScale)
+         let telegramFile = self.telegramFile
+         let layoutConstants = self.layoutConstants
+         let imageLayout = self.imageNode.asyncLayout()
+@@ -1102,6 +1103,8 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
+                     dateAndStatusApply(animation)
+                     if case .customChatContents = item.associatedData.subject {
+                         strongSelf.dateAndStatusNode.isHidden = true
++                    } else if !PatchClientPolicy.isEnabled(.stickerTimestamp) {
++                        strongSelf.dateAndStatusNode.isHidden = true
+                     }
+                     
+                     if let updatedShareButtonNode = updatedShareButtonNode {
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
+index 3075668c..b43e6d28 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
+@@ -220,7 +220,10 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
+         
+         let currentCachedChatMessageText = self.cachedChatMessageText
+         let expandedBlockIds = self.expandedBlockIds
+-        let displayContentsUnderSpoilers = self.displayContentsUnderSpoilers
++        var displayContentsUnderSpoilers = self.displayContentsUnderSpoilers
++        if PatchClientPolicy.isEnabled(.disableTextSpoilers) {
++            displayContentsUnderSpoilers.value = true
++        }
+         let currentMaxGlyphCount: Int? = self.textRevealController?.currentGlyphCount
+         let previousGlyphCount = self.textNode.textNode.cachedLayout?.attributedString?.length ?? 0
+         
 diff --git a/submodules/TelegramUI/Components/Chat/ChatRichTextEditorComposer/Sources/RichTextEditorChatInputNode.swift b/submodules/TelegramUI/Components/Chat/ChatRichTextEditorComposer/Sources/RichTextEditorChatInputNode.swift
 index b4b76db1..4ad4ccb9 100644
 --- a/submodules/TelegramUI/Components/Chat/ChatRichTextEditorComposer/Sources/RichTextEditorChatInputNode.swift
@@ -6955,7 +7258,7 @@ index b4b76db1..4ad4ccb9 100644
          get { self.editorView.customInputView }
          set { self.editorView.customInputView = newValue }
 diff --git a/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift b/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift
-index 826bdb40..b81e3e49 100644
+index 826bdb40..915e86b4 100644
 --- a/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift
 +++ b/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift
 @@ -403,6 +403,89 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
@@ -6968,7 +7271,7 @@ index 826bdb40..b81e3e49 100644
 +    private func updateFaithgramToolbar() {
 +        guard let editor = self.richTextInputNode else { return }
 +        let formatting = PatchClientPolicy.isEnabled(.formattingPanel)
-+        let translation = PatchClientPolicy.isEnabled(.localTranslation)
++        let translation = PatchClientPolicy.isEnabled(.localTranslation) && PatchClientPolicy.isEnabled(.quickTranslateButton)
 +        guard formatting || translation else {
 +            if self.faithgramToolbar != nil {
 +                self.faithgramToolbar = nil
@@ -7048,7 +7351,35 @@ index 826bdb40..b81e3e49 100644
      private let statusDisposable = MetaDisposable()
      override public var interfaceInteraction: ChatPanelInterfaceInteraction? {
          didSet {
-@@ -1123,6 +1206,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
+@@ -945,13 +1028,16 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
+         
+         self.mediaActionButtons.micButton.beginRecording = { [weak self] in
+             if let strongSelf = self, let presentationInterfaceState = strongSelf.presentationInterfaceState, let interfaceInteraction = strongSelf.interfaceInteraction {
+-                let isVideo: Bool
++                var isVideo: Bool
+                 switch presentationInterfaceState.interfaceState.mediaRecordingMode {
+                     case .audio:
+                         isVideo = false
+                     case .video:
+                         isVideo = true
+                 }
++                let allowedModes = FaithgramChoices.values(FaithgramChoices.recordingButton)
++                if !allowedModes.contains("round") { isVideo = false }
++                if !allowedModes.contains("voice") { isVideo = true }
+                 interfaceInteraction.beginMediaRecording(isVideo)
+             }
+         }
+@@ -999,6 +1085,9 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
+         }
+         self.mediaActionButtons.micButton.switchMode = { [weak self] in
+             if let strongSelf = self, let interfaceInteraction = strongSelf.interfaceInteraction {
++                if FaithgramChoices.values(FaithgramChoices.recordingButton).count < 2 {
++                    return
++                }
+                 interfaceInteraction.switchMediaRecordingMode()
+             }
+         }
+@@ -1123,6 +1212,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
      }
      
      deinit {
@@ -7056,7 +7387,7 @@ index 826bdb40..b81e3e49 100644
          self.statusDisposable.dispose()
          self.tooltipController?.dismiss()
          self.currentEmojiSuggestion?.disposable.dispose()
-@@ -1277,6 +1361,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
+@@ -1277,6 +1367,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
          richTextInputNode.inputView.disablesInteractiveTransitionGestureRecognizer = true
          richTextInputNode.inputIsUserInteractionEnabled = !self.sendingTextDisabled
          self.richTextInputNode = richTextInputNode
@@ -7064,7 +7395,16 @@ index 826bdb40..b81e3e49 100644
          richTextInputNode.emojiViewProvider = { [weak self] emoji in
              return self?.emojiViewProvider?(emoji)
          }
-@@ -3895,6 +3980,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
+@@ -3570,7 +3661,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
+         }
+ 
+         // AI button in the TOP 40x40 slot of the capsule (fades in with the 3-line rule).
+-        if self.isAIEnabled {
++        if self.isAIEnabled && !PatchClientPolicy.isEnabled(.hideArticleButton) {
+             let aiButton: (button: HighlightTrackingButton, icon: UIImageView)
+             if let current = self.attachmentAIButton {
+                 aiButton = current
+@@ -3895,6 +3986,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
          transition.updateFrame(view: self.glassBackgroundContainer, frame: containerFrame)
          self.glassBackgroundContainer.update(size: containerFrame.size, isDark: interfaceState.theme.overallDarkAppearance, transition: ComponentTransition(transition))
          
@@ -7666,7 +8006,7 @@ index 44aff19e..fbc6341f 100644
 +    return result
 +}
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
-index fdfd1cee..a1f64db2 100644
+index fdfd1cee..b50f1162 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
 +++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
 @@ -1,4 +1,5 @@
@@ -7783,7 +8123,7 @@ index fdfd1cee..a1f64db2 100644
 +                    let fallback = self.faithgramBadgeFallbacks[state][index]
 +                    let image = self.faithgramBadgeImage(grant.role, color: navigationContentsAccentColor)
 +                    let content: EmojiStatusComponent.Content
-+                    if let fileId = grant.role.fileId {
++                    if let fileId = grant.role.fileId, !PatchClientPolicy.isEnabled(.disableBadgeEffect) {
 +                        fallback.image = image
 +                        content = .animation(content: .customEmoji(fileId: fileId), size: CGSize(width: 80, height: 80), placeholderColor: navigationContentsAccentColor, themeColor: navigationContentsAccentColor, loopMode: .forever)
 +                    } else {
@@ -7852,10 +8192,10 @@ index fdfd1cee..a1f64db2 100644
          if "".isEmpty {
              let starRating: TelegramStarRating
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift
-index 80b7f204..5628f3b7 100644
+index 80b7f204..7f21d476 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift
 +++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift
-@@ -155,10 +155,13 @@ func infoItems(
+@@ -155,15 +155,19 @@ func infoItems(
              ))
          }
          
@@ -7871,14 +8211,22 @@ index 80b7f204..5628f3b7 100644
                  label = presentationData.strings.UserInfo_AnonymousNumberLabel
              } else {
                  label = presentationData.strings.ContactInfo_PhoneLabelMobile
-@@ -171,11 +174,23 @@ func infoItems(
+             }
+-            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemPhoneNumber, label: label, text: formattedPhone, textColor: .accent, action: { node, progress in
++            let phoneSpoiler = FaithgramProfileCover.spoilers(.phone, ownProfile: ownProfile)
++            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemPhoneNumber, label: label, text: formattedPhone, entities: phoneSpoiler ? [MessageTextEntity(range: 0 ..< formattedPhone.count, type: .Spoiler)] : [], handleSpoilers: phoneSpoiler, textColor: .accent, action: { node, progress in
+                 interaction.openPhone(phone, node, nil, progress)
+             }, longTapAction: nil, contextAction: { node, gesture, _ in
+                 interaction.openPhone(phone, node, gesture, nil)
+@@ -171,11 +175,24 @@ func infoItems(
                  interaction.requestLayout(animated)
              }))
          }
 -        if let mainUsername = user.addressName {
 +        let faithgramDisplayedId: Int64? = (localProfile ? FaithgramVisualPreferences.int("displayUserId") : nil) ?? (PatchClientPolicy.isEnabled(.showProfileId) ? user.id.id._internalGetInt64Value() : nil)
 +        if let displayedId = faithgramDisplayedId, !FaithgramProfileCover.hidesRow(.id, ownProfile: ownProfile) {
-+            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 3090, label: FaithgramPreferences.interfaceText("ID"), text: String(displayedId), textColor: .primary, action: { _, _ in UIPasteboard.general.string = String(displayedId) }, longTapAction: nil, requestLayout: { _ in }))
++            let idSpoiler = FaithgramProfileCover.spoilers(.id, ownProfile: ownProfile)
++            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 3090, label: FaithgramPreferences.interfaceText("ID"), text: String(displayedId), entities: idSpoiler ? [MessageTextEntity(range: 0 ..< String(displayedId).count, type: .Spoiler)] : [], handleSpoilers: idSpoiler, textColor: .primary, action: { _, _ in UIPasteboard.general.string = String(displayedId) }, longTapAction: nil, requestLayout: { _ in }))
 +        }
 +        if PatchClientPolicy.isEnabled(.showDataCenter), let datacenterId = (user.photo.first?.resource as? CloudPeerPhotoSizeMediaResource)?.datacenterId {
 +            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 3091, label: FaithgramPreferences.interfaceText("Data center"), text: "DC\(datacenterId)", textColor: .primary, action: nil, longTapAction: nil, requestLayout: { _ in }))
@@ -7898,7 +8246,17 @@ index 80b7f204..5628f3b7 100644
              }
              
              items[currentPeerInfoSection]!.append(
-@@ -205,6 +220,12 @@ func infoItems(
+@@ -183,7 +200,9 @@ func infoItems(
+                     id: ItemUsername,
+                     label: presentationData.strings.Profile_Username,
+                     text: "@\(mainUsername)",
++                    entities: FaithgramProfileCover.spoilers(.usernames, ownProfile: ownProfile) ? [MessageTextEntity(range: 0 ..< (mainUsername.count + 1), type: .Spoiler)] : [],
+                     additionalText: additionalUsernames,
++                    handleSpoilers: FaithgramProfileCover.spoilers(.usernames, ownProfile: ownProfile),
+                     textColor: .accent,
+                     icon: .qrCode,
+                     action: { _, progress in
+@@ -205,6 +224,12 @@ func infoItems(
              )
          }
          
@@ -7911,7 +8269,7 @@ index 80b7f204..5628f3b7 100644
          if let cachedData = data.cachedData as? CachedUserData {
              if let birthday = cachedData.birthday {
                  let isBirthdayToday = hasBirthdayToday(birthday: birthday)
-@@ -508,7 +529,7 @@ func infoItems(
+@@ -508,7 +533,7 @@ func infoItems(
                      }))
                  }
                                  
@@ -7920,7 +8278,7 @@ index 80b7f204..5628f3b7 100644
                      let description: String
                      let descriptionString = verification.description
                      let entities = generateTextEntities(descriptionString, enabledTypes: [.allUrl])
-@@ -685,7 +706,7 @@ func infoItems(
+@@ -685,7 +710,7 @@ func infoItems(
                      }))
                  }
                  
@@ -7929,7 +8287,7 @@ index 80b7f204..5628f3b7 100644
                      let description: String
                      let descriptionString = verification.description
                      let entities = generateTextEntities(descriptionString, enabledTypes: [.allUrl])
-@@ -1218,7 +1239,7 @@ func editingItems(data: PeerInfoScreenData?, boostStatus: ChannelBoostStatus?, s
+@@ -1218,7 +1243,7 @@ func editingItems(data: PeerInfoScreenData?, boostStatus: ChannelBoostStatus?, s
                      let colorImage = generateSettingsMenuPeerColorsLabelIcon(colors: colors)
                      
                      var boostIcon: UIImage?
@@ -7938,7 +8296,7 @@ index 80b7f204..5628f3b7 100644
                          boostIcon = generateDisclosureActionBoostLevelBadgeImage(text: presentationData.strings.Channel_Info_BoostLevelPlusBadge("1").string)
                      }
                      items[.peerSettings]!.append(PeerInfoScreenDisclosureItem(id: ItemPeerColor, label: .image(colorImage, colorImage.size), additionalBadgeIcon: boostIcon, text: presentationData.strings.Channel_Info_AppearanceItem, icon: PresentationResourcesSettings.chatAppearance, action: {
-@@ -1536,7 +1557,7 @@ func editingItems(data: PeerInfoScreenData?, boostStatus: ChannelBoostStatus?, s
+@@ -1536,7 +1561,7 @@ func editingItems(data: PeerInfoScreenData?, boostStatus: ChannelBoostStatus?, s
                          let colorImage = generateSettingsMenuPeerColorsLabelIcon(colors: colors)
                          
                          var boostIcon: UIImage?
@@ -7948,7 +8306,7 @@ index 80b7f204..5628f3b7 100644
                          } else {
                              boostIcon = nil
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
-index fd01930f..498bd29e 100644
+index fd01930f..d9228c41 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
 +++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
 @@ -163,6 +163,7 @@ enum PeerInfoSettingsSection {
@@ -7975,6 +8333,15 @@ index fd01930f..498bd29e 100644
          guard case let .channel(channel) = self.data?.peer, let controller = self.controller else {
              return
          }
+@@ -6735,7 +6738,7 @@ public final class PeerInfoScreenImpl: ViewController, PeerInfoScreen, KeyShortc
+                     strongSelf.tabBarItem.selectedImage = selectedImage
+                     strongSelf.tabBarItem.animationName = isAvatar || reduceMotion ? nil : "TabSettings"
+                     strongSelf.tabBarItem.ringSelection = isAvatar
+-                    strongSelf.tabBarItem.badgeValue = badgeValue
++                    strongSelf.tabBarItem.badgeValue = FaithgramChoices.contains(FaithgramChoices.tabsBadge, "settings") ? badgeValue : nil
+                 }
+             })
+             
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenOpenPhone.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenOpenPhone.swift
 index c2789561..c8d08ebe 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenOpenPhone.swift
@@ -8196,6 +8563,51 @@ index a2ad5a93..6d27ed90 100644
          if case let .channel(channel) = info.peer, channel.flags.contains(.autoTranslateEnabled) {
              translationAvailable = true
          }
+diff --git a/submodules/TelegramUI/Components/VideoMessageCameraScreen/Sources/VideoMessageCameraScreen.swift b/submodules/TelegramUI/Components/VideoMessageCameraScreen/Sources/VideoMessageCameraScreen.swift
+index cf28d4c8..828eedce 100644
+--- a/submodules/TelegramUI/Components/VideoMessageCameraScreen/Sources/VideoMessageCameraScreen.swift
++++ b/submodules/TelegramUI/Components/VideoMessageCameraScreen/Sources/VideoMessageCameraScreen.swift
+@@ -297,6 +297,7 @@ private final class VideoMessageCameraScreenComponent: CombinedComponent {
+         
+         private var lastFlipTimestamp: Double?
+         func togglePosition() {
++            guard PatchClientPolicy.isEnabled(.selectCamera) else { return }
+             guard let controller = self.getController(), let camera = controller.camera else {
+                 return
+             }
+@@ -966,11 +967,11 @@ public class VideoMessageCameraScreen: ViewController {
+                 self.mainPreviewView.resetPlaceholder(front: false)
+                 self.additionalPreviewView.resetPlaceholder(front: true)
+             } else {
+-                self.mainPreviewView.resetPlaceholder(front: isFrontPosition)
++                self.mainPreviewView.resetPlaceholder(front: isFrontPosition && !PatchClientPolicy.isEnabled(.startRearCamera))
+             }
+             
+             self.cameraState = CameraState(
+-                position: isFrontPosition ? .front : .back,
++                position: (isFrontPosition && !PatchClientPolicy.isEnabled(.startRearCamera)) ? .front : .back,
+                 flashMode: .off,
+                 flashModeDidChange: false,
+                 flashTint: .white,
+@@ -1102,6 +1103,9 @@ public class VideoMessageCameraScreen: ViewController {
+             
+             camera.focus(at: CGPoint(x: 0.5, y: 0.5), autoFocus: true)
+             camera.startCapture()
++            if PatchClientPolicy.isEnabled(.forceHalfZoom) {
++                camera.setZoomLevel(-10.0)
++            }
+             
+             self.camera = camera
+             
+@@ -2105,7 +2109,7 @@ public class VideoMessageCameraScreen: ViewController {
+     
+     private func requestAudioSession() {
+         let audioSessionType: ManagedAudioSessionType
+-        if self.context.sharedContext.currentMediaInputSettings.with({ $0 }).pauseMusicOnRecording { 
++        if self.context.sharedContext.currentMediaInputSettings.with({ $0 }).pauseMusicOnRecording && !PatchClientPolicy.isEnabled(.keepMusicPlaying) { 
+             audioSessionType = .record(speaker: false, video: false, withOthers: false)
+         } else {
+             audioSessionType = .record(speaker: false, video: false, withOthers: true)
 diff --git a/submodules/TelegramUI/Sources/AccountContext.swift b/submodules/TelegramUI/Sources/AccountContext.swift
 index 4d971fd3..27c8ddba 100644
 --- a/submodules/TelegramUI/Sources/AccountContext.swift
@@ -8385,10 +8797,49 @@ index b1ea96b8..ea6cf84d 100644
          let _ = (self.authorizedContext()
          |> take(1)
 diff --git a/submodules/TelegramUI/Sources/Chat/ChatControllerLoadDisplayNode.swift b/submodules/TelegramUI/Sources/Chat/ChatControllerLoadDisplayNode.swift
-index 8de49d0f..01e71805 100644
+index 8de49d0f..1da1cc23 100644
 --- a/submodules/TelegramUI/Sources/Chat/ChatControllerLoadDisplayNode.swift
 +++ b/submodules/TelegramUI/Sources/Chat/ChatControllerLoadDisplayNode.swift
-@@ -4856,6 +4856,7 @@ extension ChatControllerImpl {
+@@ -279,6 +279,13 @@ extension ChatControllerImpl {
+                 nextChannelToRead.location
+             )
+         }
++        if let next = self.chatDisplayNode.historyNode.nextChannelToRead {
++            if next.threadData != nil {
++                if !PatchClientPolicy.isEnabled(.pullToNextTopic) { self.chatDisplayNode.historyNode.nextChannelToRead = nil }
++            } else if !PatchClientPolicy.isEnabled(.pullToNextUnreadChannel) {
++                self.chatDisplayNode.historyNode.nextChannelToRead = nil
++            }
++        }
+         self.chatDisplayNode.historyNode.nextChannelToReadDisplayName = contentData.state.nextChannelToReadDisplayName
+         self.updateNextChannelToReadVisibility()
+         
+@@ -849,6 +856,9 @@ extension ChatControllerImpl {
+                 } else {
+                     currentSendAsPeerId = nil
+                 }
++                if currentSendAsPeerId == nil, PatchClientPolicy.isEnabled(.postAsChannelDefault), let channel = allPeers?.first(where: { $0.peer.id.namespace == Namespaces.Peer.CloudChannel && (isPremium || !$0.isPremiumRequired) }) {
++                    currentSendAsPeerId = channel.peer.id
++                }
+                 
+                 strongSelf.updateChatPresentationInterfaceState(animated: true, interactive: false, {
+                     return $0.updatedSendAsPeers(allPeers).updatedCurrentSendAsPeerId(currentSendAsPeerId)
+@@ -2139,6 +2149,14 @@ extension ChatControllerImpl {
+                         }.updatedInputMode({ _ in updatedMode })
+                 })
+                 
++                if PatchClientPolicy.isEnabled(.calcSuggestions), let calculated = faithgramEvaluateCalculation(strongSelf.presentationInterfaceState.interfaceState.effectiveInputState.inputText.string) {
++                    strongSelf.updateChatPresentationInterfaceState(animated: false, interactive: true, { state in
++                        return state.updatedInterfaceState { interfaceState in
++                            return interfaceState.withUpdatedEffectiveInputState(ChatTextInputState(inputText: NSAttributedString(string: calculated)))
++                        }
++                    })
++                }
++                
+                 if !strongSelf.presentationInterfaceState.interfaceState.effectiveInputState.isEmpty {
+                     strongSelf.silentPostTooltipController?.dismiss()
+                 }
+@@ -4856,6 +4874,7 @@ extension ChatControllerImpl {
              return self
          }, statuses: ChatPanelInterfaceInteractionStatuses(editingMessage: self.editingMessage.get(), startingBot: self.startingBot.get(), unblockingPeer: self.unblockingPeer.get(), searching: self.searching.get(), loadingMessage: self.loadingMessage.get(), inlineSearch: self.performingInlineSearch.get()))
          
@@ -8476,10 +8927,20 @@ index 6cac18a9..4d4da545 100644
                          entries.insert(.MessageGroupEntry(groupingKey, groupMessages, presentationData), at: 0)
                      } else {
 diff --git a/submodules/TelegramUI/Sources/ChatHistoryListNode.swift b/submodules/TelegramUI/Sources/ChatHistoryListNode.swift
-index b547dd3b..4c3cea8e 100644
+index b547dd3b..440da08d 100644
 --- a/submodules/TelegramUI/Sources/ChatHistoryListNode.swift
 +++ b/submodules/TelegramUI/Sources/ChatHistoryListNode.swift
-@@ -2165,7 +2165,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
+@@ -820,6 +820,9 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
+                 self.allowDustEffect = false
+             }
+         }
++        if !PatchClientPolicy.isEnabled(.deletionEffects) {
++            self.allowDustEffect = false
++        }
+         
+         let presentationData = updatedPresentationData.initial
+         self.currentPresentationData = ChatPresentationData(theme: ChatPresentationThemeData(theme: presentationData.theme, wallpaper: presentationData.chatWallpaper), fontSize: presentationData.chatFontSize, strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat, nameDisplayOrder: presentationData.nameDisplayOrder, disableAnimations: true, largeEmoji: presentationData.largeEmoji, chatBubbleCorners: presentationData.chatBubbleCorners, animatedEmojiScale: 1.0)
+@@ -2165,7 +2168,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                  )
                  
                  var translateToLanguage: (fromLang: String, toLang: String)?
@@ -8489,7 +8950,7 @@ index b547dd3b..4c3cea8e 100644
                      let rawSuffix = "-raw"
                      if languageCode.hasSuffix(rawSuffix) {
 diff --git a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
-index 07cef5bb..a0c56203 100644
+index 07cef5bb..4f92c6ac 100644
 --- a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
 +++ b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
 @@ -268,7 +268,7 @@ private func canViewReadStats(message: EngineRawMessage, participantCount: Int?,
@@ -8501,10 +8962,31 @@ index 07cef5bb..a0c56203 100644
              let premiumConfiguration = PremiumConfiguration.with(appConfiguration: appConfig)
              if premiumConfiguration.isPremiumDisabled {
                  return false
-@@ -963,6 +963,33 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
+@@ -963,6 +963,54 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
          let isPremium = accountPeer?.isPremium ?? false
  
          var actions: [ContextMenuItem] = []
++        if PatchClientPolicy.isEnabled(.showMediaOrigin), let mediaInfo = faithgramMediaInfo(message: message) {
++            actions.append(.action(ContextMenuActionItem(text: FaithgramPreferences.interfaceText("Media info"), icon: { theme in
++                UIImage(systemName: "info.circle")?.withTintColor(theme.contextMenu.primaryColor, renderingMode: .alwaysOriginal)
++            }, action: { _, f in
++                f(.dismissWithoutContent)
++                let alert = UIAlertController(title: FaithgramPreferences.interfaceText("Media info"), message: mediaInfo, preferredStyle: .alert)
++                alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Copy"), style: .default, handler: { _ in UIPasteboard.general.string = mediaInfo }))
++                alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("OK"), style: .cancel))
++                context.sharedContext.mainWindow?.presentNative(alert)
++            })))
++        }
++        if PatchClientPolicy.isEnabled(.whisperMessages), message.id.peerId.namespace != Namespaces.Peer.CloudUser, let author = message.author, author.id != context.account.peerId, let username = author.addressName, !username.isEmpty {
++            actions.append(.action(ContextMenuActionItem(text: FaithgramPreferences.interfaceText("Whisper to @") + username, icon: { theme in
++                UIImage(systemName: "theatermasks")?.withTintColor(theme.contextMenu.primaryColor, renderingMode: .alwaysOriginal)
++            }, action: { _, f in
++                controllerInteraction.updateInputState { _ in
++                    return ChatTextInputState(inputText: NSAttributedString(string: "@sottovoxbot @\(username) "))
++                }
++                f(.default)
++            })))
++        }
 +        let chatGhost = FaithgramPrivacySettings.isGhostChat(peerId: message.id.peerId)
 +        actions.append(.action(ContextMenuActionItem(text: FaithgramPreferences.interfaceText(chatGhost ? "Disable Ghost for this chat" : "Enable Ghost for this chat"), icon: { theme in
 +            UIImage(systemName: "eye.slash")?.withTintColor(theme.contextMenu.primaryColor, renderingMode: .alwaysOriginal)
@@ -8535,7 +9017,7 @@ index 07cef5bb..a0c56203 100644
  
          if isSharedMediaPolls && messages.count == 1 {
              actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.SharedMedia_ViewInChat, icon: { theme in
-@@ -2439,6 +2466,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
+@@ -2439,6 +2487,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
              }
          }
          
@@ -8647,10 +9129,10 @@ index 00000000..c6b8ce5d
 +}
 diff --git a/submodules/TelegramUI/Sources/FaithgramContextMenu.swift b/submodules/TelegramUI/Sources/FaithgramContextMenu.swift
 new file mode 100644
-index 00000000..d81dcb64
+index 00000000..e3a8645f
 --- /dev/null
 +++ b/submodules/TelegramUI/Sources/FaithgramContextMenu.swift
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,156 @@
 +import Foundation
 +import UIKit
 +import TelegramCore
@@ -8700,6 +9182,111 @@ index 00000000..d81dcb64
 +        }
 +        if let last = result.last, case .separator = last { result.removeLast() }
 +        return result
++    }
++}
++
++/// Technical details of a photo, video or file for the "Media info" menu entry.
++func faithgramMediaInfo(message: Message) -> String? {
++    let scope = FaithgramChoices.value(FaithgramChoices.mediaOrigin)
++    var lines: [String] = []
++    for media in message.media {
++        if let image = media as? TelegramMediaImage {
++            guard scope == "all" || scope == "photos" || scope == "off" else { continue }
++            if let largest = image.representations.max(by: { $0.dimensions.width * $0.dimensions.height < $1.dimensions.width * $1.dimensions.height }) {
++                lines.append("photo \(largest.dimensions.width)×\(largest.dimensions.height)")
++            }
++            if let size = image.representations.last?.resource.size { lines.append("size \(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))") }
++            lines.append("id \(image.imageId.id)")
++        } else if let file = media as? TelegramMediaFile {
++            let isVideo = file.isVideo || file.isAnimated
++            guard scope == "all" || scope == "off" || (scope == "videos" && isVideo) || (scope == "photos" && !isVideo) else { continue }
++            if let name = file.fileName { lines.append(name) }
++            lines.append(file.mimeType)
++            if let dimensions = file.dimensions { lines.append("\(dimensions.width)×\(dimensions.height)") }
++            if let size = file.size { lines.append("size \(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))") }
++            if let duration = file.duration { lines.append("duration \(Int(duration)) s") }
++            lines.append("id \(file.fileId.id) · dc \((file.resource as? CloudDocumentMediaResource)?.datacenterId ?? 0)")
++        }
++    }
++    if let forward = message.forwardInfo {
++        let formatter = DateFormatter()
++        formatter.dateStyle = .medium
++        formatter.timeStyle = .short
++        lines.append("forwarded \(formatter.string(from: Date(timeIntervalSince1970: TimeInterval(forward.date))))")
++    }
++    return lines.isEmpty ? nil : lines.joined(separator: "\n")
++}
++
++/// Evaluates "2+2=" style input into "2+2=4". Only digits, + - * / ( ) . and % are accepted.
++func faithgramEvaluateCalculation(_ text: String) -> String? {
++    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
++    guard trimmed.hasSuffix("="), trimmed.count >= 2 else { return nil }
++    let expression = String(trimmed.dropLast()).replacingOccurrences(of: " ", with: "").replacingOccurrences(of: ",", with: ".").replacingOccurrences(of: "×", with: "*").replacingOccurrences(of: "÷", with: "/")
++    guard !expression.isEmpty, expression.count <= 120, expression.unicodeScalars.allSatisfy({ "0123456789.+-*/()%".unicodeScalars.contains($0) }) else { return nil }
++    guard expression.rangeOfCharacter(from: CharacterSet(charactersIn: "+-*/%")) != nil else { return nil }
++    var parser = FaithgramCalcParser(Array(expression.unicodeScalars))
++    guard let value = parser.parseExpression(), parser.index == parser.chars.count, value.isFinite else { return nil }
++    let formatter = NumberFormatter()
++    formatter.numberStyle = .decimal
++    formatter.maximumFractionDigits = 6
++    formatter.usesGroupingSeparator = false
++    guard let result = formatter.string(from: NSNumber(value: value)) else { return nil }
++    return trimmed + result
++}
++
++struct FaithgramCalcParser {
++    let chars: [Unicode.Scalar]
++    var index = 0
++    init(_ chars: [Unicode.Scalar]) { self.chars = chars }
++
++    private func peek() -> Unicode.Scalar? { return index < chars.count ? chars[index] : nil }
++
++    mutating func parseExpression() -> Double? {
++        guard var value = parseTerm() else { return nil }
++        while let c = peek(), c == "+" || c == "-" {
++            index += 1
++            guard let rhs = parseTerm() else { return nil }
++            value = c == "+" ? value + rhs : value - rhs
++        }
++        return value
++    }
++
++    private mutating func parseTerm() -> Double? {
++        guard var value = parseUnary() else { return nil }
++        while let c = peek(), c == "*" || c == "/" || c == "%" {
++            index += 1
++            guard let rhs = parseUnary() else { return nil }
++            switch c {
++            case "*": value *= rhs
++            case "/": if rhs == 0 { return nil }; value /= rhs
++            default: value = value * rhs / 100.0
++            }
++        }
++        return value
++    }
++
++    private mutating func parseUnary() -> Double? {
++        if let c = peek(), c == "-" { index += 1; return parsePrimary().map { -$0 } }
++        if let c = peek(), c == "+" { index += 1 }
++        return parsePrimary()
++    }
++
++    private mutating func parsePrimary() -> Double? {
++        guard let c = peek() else { return nil }
++        if c == "(" {
++            index += 1
++            guard let value = parseExpression(), peek() == ")" else { return nil }
++            index += 1
++            return value
++        }
++        var digits = ""
++        while let d = peek(), (d >= "0" && d <= "9") || d == "." {
++            digits.unicodeScalars.append(d)
++            index += 1
++        }
++        guard !digits.isEmpty, let value = Double(digits) else { return nil }
++        if let d = peek(), d == "%" { index += 1; return value / 100.0 }
++        return value
 +    }
 +}
 diff --git a/submodules/TelegramUI/Sources/FaithgramIslandOverlay.swift b/submodules/TelegramUI/Sources/FaithgramIslandOverlay.swift
@@ -9071,7 +9658,7 @@ index c5ea2111..f76717ec 100644
      
      public func openChatsController(activateSearch: Bool, filter: ChatListSearchFilter = .chats, query: String? = nil) {
 diff --git a/submodules/TelegramUI/Sources/TextLinkHandling.swift b/submodules/TelegramUI/Sources/TextLinkHandling.swift
-index de144e98..7317a677 100644
+index de144e98..1ba2f3a9 100644
 --- a/submodules/TelegramUI/Sources/TextLinkHandling.swift
 +++ b/submodules/TelegramUI/Sources/TextLinkHandling.swift
 @@ -140,7 +140,7 @@ func handleTextLinkActionImpl(context: AccountContext, peerId: EnginePeer.Id?, n
@@ -9083,6 +9670,108 @@ index de144e98..7317a677 100644
                          var rawDisplayUrl: String = parsedString
                          let maxLength = 180
                          if rawDisplayUrl.count > maxLength {
+@@ -208,7 +208,7 @@ func handleTextLinkActionImpl(context: AccountContext, peerId: EnginePeer.Id?, n
+                                 let _ = try? SSReadingList.default()?.addItem(with: link, title: nil, previewText: nil)
+                             }
+                         })
+-                    ]), ActionSheetItemGroup(items: [
++                    ])] + faithgramLinkActionGroups(url: url, context: context, controller: controller, actionSheet: actionSheet, openLink: openLinkImpl) + [ActionSheetItemGroup(items: [
+                         ActionSheetButtonItem(title: presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in
+                             actionSheet?.dismissAnimated()
+                         })
+@@ -260,3 +260,92 @@ func handleTextLinkActionImpl(context: AccountContext, peerId: EnginePeer.Id?, n
+             }
+     }
+ }
++
++
++// MARK: - Faithgram link tools
++
++private func faithgramLinkActionGroups(url: String, context: AccountContext, controller: ViewController, actionSheet: ActionSheetController, openLink: @escaping (String) -> Void) -> [ActionSheetItemGroup] {
++    guard let parsed = URL(string: url), let host = parsed.host?.lowercased() else { return [] }
++    var items: [ActionSheetItem] = []
++    if PatchClientPolicy.isEnabled(.whoisLookup) {
++        items.append(ActionSheetButtonItem(title: FaithgramPreferences.interfaceText("Look up ") + host, color: .accent, action: { [weak actionSheet] in
++            actionSheet?.dismissAnimated()
++            faithgramLookupHost(host, context: context)
++        }))
++    }
++    if PatchClientPolicy.isEnabled(.downloadTikTok), host == "tiktok.com" || host.hasSuffix(".tiktok.com") {
++        items.append(ActionSheetButtonItem(title: FaithgramPreferences.interfaceText("Download TikTok video"), color: .accent, action: { [weak actionSheet] in
++            actionSheet?.dismissAnimated()
++            faithgramResolveTikTok(url, context: context, openLink: openLink)
++        }))
++    }
++    if PatchClientPolicy.isEnabled(.instantViewX), host == "x.com" || host == "twitter.com" || host.hasSuffix(".x.com") || host.hasSuffix(".twitter.com") {
++        items.append(ActionSheetButtonItem(title: FaithgramPreferences.interfaceText("Open with preview"), color: .accent, action: { [weak actionSheet] in
++            actionSheet?.dismissAnimated()
++            var components = URLComponents(string: url)
++            components?.host = "fxtwitter.com"
++            openLink(components?.string ?? url)
++        }))
++    }
++    return items.isEmpty ? [] : [ActionSheetItemGroup(items: items)]
++}
++
++private func faithgramPresentInfo(_ title: String, _ message: String, context: AccountContext) {
++    let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
++    alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("Copy"), style: .default, handler: { _ in UIPasteboard.general.string = message }))
++    alert.addAction(UIAlertAction(title: FaithgramPreferences.interfaceText("OK"), style: .cancel))
++    context.sharedContext.mainWindow?.presentNative(alert)
++}
++
++private func faithgramLookupHost(_ host: String, context: AccountContext) {
++    guard let requestUrl = URL(string: "https://ipwho.is/" + host) else { return }
++    var request = URLRequest(url: requestUrl)
++    request.timeoutInterval = 15.0
++    URLSession.shared.dataTask(with: request) { data, _, error in
++        var lines: [String] = []
++        if let data, let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], object["success"] as? Bool == true {
++            if let ip = object["ip"] as? String { lines.append("ip: " + ip) }
++            if let country = object["country"] as? String { lines.append("country: " + country + ((object["country_code"] as? String).map { " (\($0))" } ?? "")) }
++            if let region = object["region"] as? String, let city = object["city"] as? String { lines.append("location: \(city), \(region)") }
++            if let connection = object["connection"] as? [String: Any] {
++                if let isp = connection["isp"] as? String { lines.append("isp: " + isp) }
++                if let org = connection["org"] as? String { lines.append("org: " + org) }
++                if let asn = connection["asn"] as? Int { lines.append("asn: \(asn)") }
++            }
++            if let timezone = object["timezone"] as? [String: Any], let id = timezone["id"] as? String { lines.append("timezone: " + id) }
++        } else if let data, let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let message = object["message"] as? String {
++            lines.append(message)
++        } else {
++            lines.append(error?.localizedDescription ?? FaithgramPreferences.interfaceText("Lookup failed."))
++        }
++        DispatchQueue.main.async {
++            faithgramPresentInfo(host, lines.joined(separator: "\n"), context: context)
++        }
++    }.resume()
++}
++
++private func faithgramResolveTikTok(_ url: String, context: AccountContext, openLink: @escaping (String) -> Void) {
++    let scope = FaithgramChoices.value(FaithgramChoices.downloadType)
++    guard let encoded = url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed), let requestUrl = URL(string: "https://www.tikwm.com/api/?hd=1&url=" + encoded) else { return }
++    var request = URLRequest(url: requestUrl)
++    request.timeoutInterval = 20.0
++    URLSession.shared.dataTask(with: request) { data, _, error in
++        var target: String?
++        if let data, let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let payload = object["data"] as? [String: Any] {
++            let keys = scope == "audio" ? ["music"] : ["hdplay", "play"]
++            for key in keys {
++                if let value = payload[key] as? String, !value.isEmpty {
++                    target = value.hasPrefix("http") ? value : "https://www.tikwm.com" + value
++                    break
++                }
++            }
++        }
++        DispatchQueue.main.async {
++            if let target {
++                openLink(target)
++            } else {
++                faithgramPresentInfo("tiktok", error?.localizedDescription ?? FaithgramPreferences.interfaceText("The video could not be resolved."), context: context)
++            }
++        }
++    }.resume()
++}
 diff --git a/submodules/TranslateUI/Sources/ChatTranslation.swift b/submodules/TranslateUI/Sources/ChatTranslation.swift
 index e21e907f..470e4eaf 100644
 --- a/submodules/TranslateUI/Sources/ChatTranslation.swift

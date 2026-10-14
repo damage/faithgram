@@ -87,6 +87,16 @@ public enum FaithgramChoices {
         translateService, voiceService, rankOwner, rankAdmin, rankMember
     ]
 
+    /// 1, 2, 4 or 8 parallel download connections multiplier from the Download Boost choice.
+    public static var downloadBoostMultiplier: Int {
+        switch value(downloadBoost) {
+        case "x2": return 2
+        case "x4": return 4
+        case "x8": return 8
+        default: return 1
+        }
+    }
+
     public static func choice(forStorageKey key: String) -> FaithgramChoice? {
         return all.first { $0.storageKey == key }
     }
